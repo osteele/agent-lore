@@ -60,12 +60,16 @@ must be exactly this, with `{kb}` replaced by the resolved repo path:
 1. Session id: first non-empty of `CLAUDE_CODE_SESSION_ID`,
    `CODEX_THREAD_ID`, `AGENT_SESSION_ID` (record *which* variable supplied
    it). If none: mint a UUID and record `minted: true`.
-2. Session name: if `~/.claude/agent-mail/session-names/<sessionId>.json`
-   exists (agent-mail's persisted name store), read it **read-only** as
-   enrichment — accept either a `{ "full": …, "display": … }` shape or any
-   JSON object with string fields plausibly holding the name; if the file is
-   missing or unparseable, fall back without error to
-   `session-<first 8 chars of id>`. Never write to agent-mail's directories.
+2. Session name: agent-mail's persisted name store keys files by
+   `sha256(sessionId)` — if
+   `~/.claude/agent-mail/session-names/<sha256(sessionId)>.json` exists, read
+   it **read-only** as enrichment. The record shape is
+   `{ "sessionId": …, "scheme": …, "slug": "fair-garden",
+   "displayName": "Fair Garden" }`; prefer `slug` (it doubles as the ledger
+   filename and git author name), require the inner `sessionId` to match when
+   present, and if the file is missing, unparseable, or for another session,
+   fall back without error to `session-<first 8 chars of id>`. Never write to
+   agent-mail's directories.
 3. Git identity for commits: author name = session name, author email =
    `<sessionId>@agent-lore`. Committer = same.
 
