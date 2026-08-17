@@ -624,13 +624,20 @@ interface GitOptions {
   env?: Record<string, string>;
 }
 
+// A bare "git" on PATH may be a shadow shim (agent-command-guards) that
+// rewrites add/commit into jj operations when a .jj directory sits anywhere
+// above the target. This plumbing needs the real binary.
+const GIT_BIN =
+  process.env.AGENT_LORE_GIT ??
+  (fs.existsSync("/usr/bin/git") ? "/usr/bin/git" : "git");
+
 async function git(
   kb: string,
   args: string[],
   options: GitOptions = {},
 ): Promise<string> {
   const proc = Bun.spawn(
-    ["git", "-C", kb, "-c", "commit.gpgsign=false", ...args],
+    [GIT_BIN, "-C", kb, "-c", "commit.gpgsign=false", ...args],
     {
       env: { ...process.env, ...options.env },
       stdout: "pipe",

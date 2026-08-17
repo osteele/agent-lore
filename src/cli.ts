@@ -1,8 +1,6 @@
-import os from "node:os";
-import path from "node:path";
 import { initRepo, searchRepo } from "./gitrepo.ts";
 import { resolveIdentity } from "./identity.ts";
-import { LORE_VERSION, buildContext } from "./server.ts";
+import { LORE_VERSION, buildContext, defaultKbPath } from "./server.ts";
 import { type ToolContext, handleLoreLog, handleLoreRead } from "./tools.ts";
 
 const USAGE = `Usage:
@@ -129,10 +127,6 @@ async function buildCliContext(): Promise<ToolContext> {
     envAllowlist: ctx.envAllowlist,
     loreVersion: LORE_VERSION,
   };
-}
-
-function defaultKbPath(): string {
-  return path.join(os.homedir(), ".claude", "agent-lore", "kb");
 }
 
 if (import.meta.main) {

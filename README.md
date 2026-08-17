@@ -12,7 +12,7 @@ proportionate skepticism.
 ## Design
 
 - **Storage** is a plain git repo of markdown pages (default
-  `~/.claude/agent-lore/kb`, override with `AGENT_LORE_KB`). Open it in
+  `~/.local/share/agent-lore/kb`, override with `AGENT_LORE_KB`). Open it in
   Obsidian or any editor; wikilinks (`[[weft/inputs]]`) connect topics, and a
   dangling link marks a topic worth writing.
 - **Provenance is git.** Every change lands as a commit authored by the

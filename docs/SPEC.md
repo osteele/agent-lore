@@ -13,9 +13,15 @@ by a human (possibly collaborating with an agent) reading `git log`.
 
 ## Repository layout (the data repo, not this source repo)
 
-Default location: `~/.claude/agent-lore/kb`, overridable with the
+Default location: `~/.local/share/agent-lore/kb`, overridable with the
 `AGENT_LORE_KB` environment variable. The server creates and `git init`s it on
 first use if absent, with an initial commit containing a stub `README.md`.
+The default deliberately sits outside every jj working copy on this machine
+(`~/.claude` is itself a jj repo), and the tool invokes real git
+(`AGENT_LORE_GIT` override, else `/usr/bin/git`) rather than whatever `git`
+is on PATH — agent-command-guards shadows `git add`/`git commit` into jj
+operations for any path under a `.jj` tree, which silently no-ops staging and
+rejects the commit flags this pipeline uses.
 
 ```
 kb/

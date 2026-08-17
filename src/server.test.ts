@@ -28,14 +28,14 @@ describe("buildContext", () => {
   afterEach(() => {
     fs.rmSync(tmp, { recursive: true, force: true });
     if (origKb !== undefined) process.env.AGENT_LORE_KB = origKb;
-    else process.env.AGENT_LORE_KB = undefined;
+    else Reflect.deleteProperty(process.env, "AGENT_LORE_KB");
     if (origClaude !== undefined)
       process.env.CLAUDE_CODE_SESSION_ID = origClaude;
-    else process.env.CLAUDE_CODE_SESSION_ID = undefined;
+    else Reflect.deleteProperty(process.env, "CLAUDE_CODE_SESSION_ID");
     if (origSecret !== undefined) process.env.OPENAI_API_KEY = origSecret;
-    else process.env.OPENAI_API_KEY = undefined;
+    else Reflect.deleteProperty(process.env, "OPENAI_API_KEY");
     if (origTerm !== undefined) process.env.TERM_PROGRAM = origTerm;
-    else process.env.TERM_PROGRAM = undefined;
+    else Reflect.deleteProperty(process.env, "TERM_PROGRAM");
   });
 
   it("captures only allowlisted env vars", async () => {
@@ -59,7 +59,7 @@ describe("createServer", () => {
   afterEach(() => {
     fs.rmSync(tmp, { recursive: true, force: true });
     if (origKb !== undefined) process.env.AGENT_LORE_KB = origKb;
-    else process.env.AGENT_LORE_KB = undefined;
+    else Reflect.deleteProperty(process.env, "AGENT_LORE_KB");
   });
 
   it("initializes and exposes the expected tools", async () => {

@@ -83,8 +83,12 @@ export async function buildContext(
   };
 }
 
-function defaultKbPath(): string {
-  return path.join(os.homedir(), ".claude", "agent-lore", "kb");
+// The KB must not live inside any jj working copy: this machine's git shim
+// (agent-command-guards) rewrites `git add`/`git commit` into jj operations
+// for paths under a .jj tree, and ~/.claude is itself a jj repo. ~/.local/share
+// is outside every jj tree.
+export function defaultKbPath(): string {
+  return path.join(os.homedir(), ".local", "share", "agent-lore", "kb");
 }
 
 async function resolveParentInfo(

@@ -16,20 +16,20 @@ describe("resolveIdentity", () => {
     origClaude = process.env.CLAUDE_CODE_SESSION_ID;
     origCodex = process.env.CODEX_THREAD_ID;
     origAgent = process.env.AGENT_SESSION_ID;
-    process.env.CLAUDE_CODE_SESSION_ID = undefined;
-    process.env.CODEX_THREAD_ID = undefined;
-    process.env.AGENT_SESSION_ID = undefined;
+    Reflect.deleteProperty(process.env, "CLAUDE_CODE_SESSION_ID");
+    Reflect.deleteProperty(process.env, "CODEX_THREAD_ID");
+    Reflect.deleteProperty(process.env, "AGENT_SESSION_ID");
   });
 
   afterEach(() => {
     fs.rmSync(tmp, { recursive: true, force: true });
     if (origClaude !== undefined)
       process.env.CLAUDE_CODE_SESSION_ID = origClaude;
-    else process.env.CLAUDE_CODE_SESSION_ID = undefined;
+    else Reflect.deleteProperty(process.env, "CLAUDE_CODE_SESSION_ID");
     if (origCodex !== undefined) process.env.CODEX_THREAD_ID = origCodex;
-    else process.env.CODEX_THREAD_ID = undefined;
+    else Reflect.deleteProperty(process.env, "CODEX_THREAD_ID");
     if (origAgent !== undefined) process.env.AGENT_SESSION_ID = origAgent;
-    else process.env.AGENT_SESSION_ID = undefined;
+    else Reflect.deleteProperty(process.env, "AGENT_SESSION_ID");
   });
 
   it("uses CLAUDE_CODE_SESSION_ID first", () => {
