@@ -14,7 +14,10 @@ proportionate skepticism.
 - **Storage** is a plain git repo of markdown pages (default
   `~/.local/share/agent-lore/kb`, override with `AGENT_LORE_KB`). Open it in
   Obsidian or any editor; wikilinks (`[[weft/inputs]]`) connect topics, and a
-  dangling link marks a topic worth writing.
+  dangling link marks a topic worth writing. Keep it outside any jj working
+  copy: a `git` shim on this machine rewrites `add`/`commit` into jj
+  operations under a `.jj` tree (`AGENT_LORE_GIT` overrides which git binary
+  the tool invokes).
 - **Provenance is git.** Every change lands as a commit authored by the
   calling agent session, with session id, client, and project recorded in
   commit trailers. `git blame` answers "who claimed this, from where, when."
@@ -35,10 +38,10 @@ proportionate skepticism.
   preamble, and any section can be requested by heading — search hits name
   their section, so finding one and reading it is one hop.
 - **Reads are logged, outside the repo.** Writes leave commits; reads and
-  searches append to `access.jsonl` beside the repo. `lore stats` ranks
-  what agents looked for and *did not find* — a to-write list in their own
-  words — plus most-read and never-read pages. `AGENT_LORE_NO_ANALYTICS=1`
-  turns it off.
+  searches append to `access.jsonl` beside the repo (`AGENT_LORE_ACCESS_LOG`
+  overrides the location). `lore stats` ranks what agents looked for and *did
+  not find* — a to-write list in their own words — plus most-read and
+  never-read pages. `AGENT_LORE_NO_ANALYTICS=1` turns it off.
 - **Promotion is out of band.** Moving vetted lore up into skills or curated
   notes is a human's call (possibly with an agent's help), working from
   `git log` — the everyday agents writing lore have no path to the reviewed
@@ -49,8 +52,13 @@ proportionate skepticism.
 ```bash
 bun install
 lore init            # create the data repo (also happens on first use)
-lore install         # prints MCP registration snippets for Claude Code / Codex
+lore install         # prints MCP registration snippets; it edits nothing
 ```
+
+`lore install` prints ready-to-paste snippets for Claude Code (`~/.claude.json`),
+Codex (`~/.codex/config.toml`), kimi (`~/.kimi-code/mcp.json`), and opencode
+(`~/.config/opencode/opencode.jsonc`). It deliberately does not write those
+files.
 
 The MCP server runs one process per agent session over stdio (`lore mcp`) and
 injects a short instructions block at initialize, so new sessions know the KB

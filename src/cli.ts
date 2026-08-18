@@ -1,3 +1,4 @@
+import path from "node:path";
 import {
   accessLogPath,
   analyticsEnabled,
@@ -170,26 +171,44 @@ async function runStats(args: string[]): Promise<number> {
 }
 
 function runInstall(): number {
-  console.log("Claude Code (~/.claude.json user-scope mcpServers):");
+  const command = process.execPath;
+  const script = path.join(import.meta.dir, "cli.ts");
+
+  console.log("Claude Code (~/.claude.json, user-scope mcpServers):");
   console.log(
     JSON.stringify(
       {
-        mcpServers: {
-          lore: {
-            command: "lore",
-            args: ["mcp"],
-          },
+        mcpServers: { lore: { type: "stdio", command, args: [script, "mcp"] } },
+      },
+      null,
+      2,
+    ),
+  );
+
+  console.log("\nCodex (~/.codex/config.toml):");
+  console.log(`[mcp_servers.lore]
+command = ${JSON.stringify(command)}
+args = [${JSON.stringify(script)}, "mcp"]`);
+
+  console.log("\nkimi (~/.kimi-code/mcp.json, under mcpServers):");
+  console.log(
+    JSON.stringify({ lore: { command, args: [script, "mcp"] } }, null, 2),
+  );
+
+  console.log("\nopencode (~/.config/opencode/opencode.jsonc, under mcp):");
+  console.log(
+    JSON.stringify(
+      {
+        lore: {
+          type: "local",
+          command: [command, script, "mcp"],
+          enabled: true,
         },
       },
       null,
       2,
     ),
   );
-  console.log("\nCodex (~/.codex/config.toml):");
-  console.log(`[mcp_servers.lore]
-command = "lore"
-args = ["mcp"]
-`);
   return 0;
 }
 
