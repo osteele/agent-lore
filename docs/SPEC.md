@@ -126,11 +126,29 @@ return page content label talk pages and ledger pages as such.
    optional `glob` filter, optional `include_talk` (default false; also
    excludes `sessions/` unless explicitly globbed). Output: matching lines
    with `path:line` prefixes, capped (state the cap in the output when hit).
+   Each hit carries a trailing `[§ Heading]` naming its enclosing section, so
+   search → section read is one hop.
 
 3. **`lore_read`** — mirror of harness Read. Input: `path`, optional
-   `offset`/`limit`. Output: `cat -n`-style line-numbered content. Reading a
-   missing page returns a helpful error that includes near-miss suggestions
-   (same basename elsewhere in the repo) when any exist.
+   `section`, optional `offset`/`limit`. Output: `cat -n`-style line-numbered
+   content, always with original line numbers. Reading a missing page returns
+   a helpful error that includes near-miss suggestions (same basename
+   elsewhere in the repo) when any exist. Resolution order:
+   - `section` given → just that section (heading through the line before the
+     next same-or-shallower heading, so subsections are included). Matching is
+     forgiving: exact slug, exact heading, slug prefix, heading prefix,
+     heading substring, all case-insensitive and tolerant of leading `#`. A
+     miss returns the table of contents and is **logged as a zero-result
+     event** — it states what the agent expected the page to contain.
+   - explicit `offset`/`limit` → that window; explicit windowing always wins.
+   - page ≤ `LARGE_PAGE_LINES` (150) or fewer than 2 headings → the whole
+     page, exactly as a harness Read would. **The common case must stay one
+     round trip.**
+   - otherwise → the table of contents (with line ranges) plus the page
+     preamble: lines 1 through the line before the *second* heading, capped at
+     `LARGE_PAGE_LINES`. Not "the first section" — a page shaped `# Title` /
+     `## A` / `## B` has a first section spanning the whole page, since a
+     section contains its subsections.
 
 4. **`lore_write`** — create a new page or fully replace an existing one.
    Input: `path`, `content`. Refuses `sessions/` paths. Commits as one patch
@@ -191,14 +209,39 @@ Run git via `Bun.spawn` with explicit `-c user.name=… -c user.email=…` (or
 env `GIT_AUTHOR_*`/`GIT_COMMITTER_*`); never depend on or modify global git
 config. `commit.gpgsign=false` for the data repo's commits.
 
+## Read-side analytics
+
+Writes are recorded in git. Reads and searches are not, so they append to a
+JSONL log **outside** the knowledge repo: `AGENT_LORE_ACCESS_LOG`, else
+`<parent of kb>/access.jsonl`. This placement is load-bearing — read events
+are high-frequency and would swamp the commit history that provenance depends
+on, and `git log` on a page must stay a list of changes.
+
+One line per event: `ts`, `session`, `name`, `tool`, optional
+`query`/`path`/`section`, and `results`. Appends are lock-free (reads must
+never contend on the write pipeline's lock); a single small `appendFileSync`
+under `O_APPEND` interleaves whole lines between concurrent sessions. The log
+rotates to `.1` past 8 MB, checked once per process. `AGENT_LORE_NO_ANALYTICS=1`
+disables recording entirely.
+
+`results: 0` is the point of the whole mechanism. A search that found nothing,
+a page that does not exist, a section that does not match — each is a topic
+gap stated in the agent's own words, and `lore stats` ranks them as a to-write
+list. Reads are attributed per page so unread pages surface as deletion
+candidates. Malformed log lines are counted and reported, never silently
+skipped.
+
 ## CLI
 
 `src/cli.ts`, bin name `lore`. Small; the MCP server is the product.
 
 - `lore mcp` — run the stdio MCP server (this is what harness configs invoke).
 - `lore init` — create the data repo now (idempotent; prints path).
-- `lore search <pattern>` / `lore read <path>` / `lore log [path]` — thin
-  human/scripting wrappers over the same core functions the tools use.
+- `lore search <pattern>` / `lore read <path> [section]` / `lore log [path]` —
+  thin human/scripting wrappers over the same core functions the tools use.
+- `lore stats [--since <N>d] [--limit <N>]` — read-side analytics: events by
+  tool, zero-result queries ranked by frequency, most-read pages, and pages
+  never read.
 - `lore install` — print (do not write) the JSON/TOML snippets for
   registering the server with Claude Code (`~/.claude.json` user-scope
   `mcpServers`) and Codex (`~/.codex/config.toml`). v1 deliberately does not
@@ -207,6 +250,8 @@ config. `commit.gpgsign=false` for the data repo's commits.
 ## Non-goals for v1 (do not build)
 
 - No semantic/embedding search; grep is the search.
+- No analytics beyond the append-only log and `lore stats` — no dashboards,
+  no aggregation service, no per-agent scoring.
 - No frontmatter schema, lifecycle states, or tiers on note pages.
 - No notifications/watch layer (a talk write does not notify anyone). Leave
   the write pipeline factored so a notify hook can be added where the commit

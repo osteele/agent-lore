@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { type AccessEvent, recordAccess } from "./access.ts";
 import {
   type CommitResult,
   type EditArgs,
@@ -18,7 +19,25 @@ import {
 } from "./gitrepo.ts";
 import type { Identity } from "./identity.ts";
 import { isSessionsPath, normalizeRepoPath, resolveRepoPath } from "./paths.ts";
+import {
+  findSection,
+  numberLines,
+  parseSections,
+  renderToc,
+} from "./sections.ts";
 import { formatTalkEntry, normalizeTalkTopic } from "./talk.ts";
+
+function record(
+  ctx: ToolContext,
+  event: Omit<AccessEvent, "ts" | "session" | "name">,
+): void {
+  recordAccess(ctx.kb, {
+    ts: new Date().toISOString(),
+    session: ctx.identity.sessionId,
+    name: ctx.identity.name,
+    ...event,
+  });
+}
 
 export const TOOL_SCHEMAS = [
   {
@@ -63,13 +82,19 @@ export const TOOL_SCHEMAS = [
   },
   {
     name: "lore_read",
-    description: "Read a page with line numbers.",
+    description:
+      "Read a page with line numbers. Long pages return a table of contents plus the first section; request another by heading.",
     inputSchema: {
       type: "object" as const,
       properties: {
         path: {
           type: "string",
           description: "Repo-root-relative path to the page",
+        },
+        section: {
+          type: "string",
+          description:
+            "Heading of the section to read (as shown in a table of contents or a search hit's [§ ...] suffix)",
         },
         offset: { type: "integer", description: "1-based starting line" },
         limit: { type: "integer", description: "Maximum lines to return" },
@@ -203,6 +228,11 @@ export async function handleLoreGlob(
     includeTalk,
     includeSessions,
   );
+  record(ctx, {
+    tool: "lore_glob",
+    query: args.pattern,
+    results: matches.length,
+  });
   return { content: [{ type: "text", text: matches.join("\n") }] };
 }
 
@@ -220,6 +250,11 @@ export async function handleLoreSearch(
     includeTalk,
     includeSessions,
   );
+  record(ctx, {
+    tool: "lore_search",
+    query: args.pattern,
+    results: lines.length,
+  });
   let text = lines.join("\n");
   if (capped) {
     text += `\n(Output capped at ${SEARCH_LIMIT} matches)`;
@@ -229,14 +264,22 @@ export async function handleLoreSearch(
 
 const SEARCH_LIMIT = 200;
 
+/**
+ * Pages at or under this many lines are returned whole, exactly as before —
+ * the common case must stay one round trip, matching the harness Read tool
+ * agents already know. Only longer pages lead with a table of contents.
+ */
+export const LARGE_PAGE_LINES = 150;
+
 export async function handleLoreRead(
   ctx: ToolContext,
-  args: { path: string; offset?: number; limit?: number },
+  args: { path: string; offset?: number; limit?: number; section?: string },
 ): Promise<{ content: { type: "text"; text: string }[]; isError?: boolean }> {
   await ensureFirstContact(ctx);
   const rel = normalizeRepoPath(args.path);
   const content = await readRepoFile(ctx.kb, args.path);
   if (content === undefined) {
+    record(ctx, { tool: "lore_read", path: rel, results: 0 });
     const near = findNearMisses(ctx.kb, path.basename(rel));
     let message = `Page not found: ${args.path}`;
     if (near.length > 0) {
@@ -246,17 +289,84 @@ export async function handleLoreRead(
   }
 
   const lines = content.split("\n");
-  const offset = Math.max(1, args.offset ?? 1);
-  const limit = args.limit ?? lines.length;
-  const start = offset - 1;
-  const slice = lines.slice(start, start + limit);
-
+  const sections = parseSections(content);
   const label = pageLabel(rel);
   const header = label ? `# ${label}\n` : "";
-  const numbered = slice
-    .map((line, idx) => `${start + idx + 1}\t${line}`)
-    .join("\n");
-  return { content: [{ type: "text", text: `${header}${numbered}` }] };
+
+  if (args.section !== undefined) {
+    const found = findSection(sections, args.section);
+    if (found === undefined) {
+      // A missed section is a miss like any other: it says what the agent
+      // expected the page to contain.
+      record(ctx, {
+        tool: "lore_read",
+        path: rel,
+        section: args.section,
+        results: 0,
+      });
+      const toc =
+        sections.length > 0
+          ? `\nSections:\n${renderToc(sections)}`
+          : "\nThis page has no headings.";
+      return {
+        content: [
+          {
+            type: "text",
+            text: `No section matching "${args.section}" in ${rel}.${toc}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    record(ctx, {
+      tool: "lore_read",
+      path: rel,
+      section: found.heading,
+      results: found.endLine - found.startLine + 1,
+    });
+    const body = numberLines(lines, found.startLine, found.endLine);
+    return { content: [{ type: "text", text: `${header}${body}` }] };
+  }
+
+  // Explicit windowing wins over the table-of-contents behavior.
+  if (args.offset !== undefined || args.limit !== undefined) {
+    const offset = Math.max(1, args.offset ?? 1);
+    const end =
+      args.limit === undefined ? lines.length : offset + args.limit - 1;
+    record(ctx, {
+      tool: "lore_read",
+      path: rel,
+      results: Math.max(0, Math.min(end, lines.length) - offset + 1),
+    });
+    const body = numberLines(lines, offset, end);
+    return { content: [{ type: "text", text: `${header}${body}` }] };
+  }
+
+  if (lines.length <= LARGE_PAGE_LINES || sections.length < 2) {
+    record(ctx, { tool: "lore_read", path: rel, results: lines.length });
+    const body = numberLines(lines, 1, lines.length);
+    return { content: [{ type: "text", text: `${header}${body}` }] };
+  }
+
+  // Show everything before the SECOND heading, not the first section: a page
+  // shaped `# Title` / `## A` / `## B` has a first section that spans the
+  // whole page (a section contains its subsections), so "first section" would
+  // return everything and defeat the table of contents.
+  const previewEnd = Math.min(sections[1].startLine - 1, LARGE_PAGE_LINES);
+  const truncated = previewEnd < sections[1].startLine - 1;
+  record(ctx, {
+    tool: "lore_read",
+    path: rel,
+    section: "(toc)",
+    results: previewEnd,
+  });
+  const preamble = `${header}${rel} is ${lines.length} lines. Sections:
+${renderToc(sections)}
+
+Request one with lore_read(path, section: "<heading>"). Showing lines 1-${previewEnd}${truncated ? " (truncated)" : ""}:
+`;
+  const body = numberLines(lines, 1, previewEnd);
+  return { content: [{ type: "text", text: `${preamble}${body}` }] };
 }
 
 export async function handleLoreWrite(

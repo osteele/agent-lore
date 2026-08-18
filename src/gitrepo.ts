@@ -10,6 +10,7 @@ import {
   normalizeRepoPath,
   resolveRepoPath,
 } from "./paths.ts";
+import { headingForLine, parseSections } from "./sections.ts";
 import { formatTalkPage } from "./talk.ts";
 import { extractWikilinks } from "./wikilinks.ts";
 
@@ -117,9 +118,14 @@ export async function searchRepo(
   for (const rel of files) {
     const content = fs.readFileSync(path.join(kb, rel), "utf-8");
     const fileLines = content.split("\n");
+    const sections = parseSections(content);
     for (let i = 0; i < fileLines.length; i++) {
       if (re.test(fileLines[i])) {
-        lines.push(`${rel}:${i + 1} ${fileLines[i]}`);
+        // The enclosing heading is the anchor the caller can pass back as
+        // lore_read's `section`, so search → section read is one hop.
+        const heading = headingForLine(sections, i + 1);
+        const suffix = heading ? `  [§ ${heading}]` : "";
+        lines.push(`${rel}:${i + 1} ${fileLines[i]}${suffix}`);
         if (lines.length >= limit) {
           capped = true;
           break;

@@ -30,6 +30,15 @@ proportionate skepticism.
   argument shapes of the file tools built into agent harnesses, so agents
   need nothing new. Edits are atomic patch sets: one bad anchor rejects the
   whole set.
+- **Long pages return a table of contents.** Short pages come back whole, in
+  one call. Past 150 lines a read leads with the section list and the page
+  preamble, and any section can be requested by heading — search hits name
+  their section, so finding one and reading it is one hop.
+- **Reads are logged, outside the repo.** Writes leave commits; reads and
+  searches append to `access.jsonl` beside the repo. `lore stats` ranks
+  what agents looked for and *did not find* — a to-write list in their own
+  words — plus most-read and never-read pages. `AGENT_LORE_NO_ANALYTICS=1`
+  turns it off.
 - **Promotion is out of band.** Moving vetted lore up into skills or curated
   notes is a human's call (possibly with an agent's help), working from
   `git log` — the everyday agents writing lore have no path to the reviewed
@@ -51,9 +60,10 @@ skills.
 ## CLI
 
 ```bash
-lore search <pattern>   # grep the notes (talk pages excluded by default)
-lore read <path>
-lore log [path]         # who wrote what, from git history
+lore search <pattern>       # grep the notes (talk pages excluded by default)
+lore read <path> [section]
+lore log [path]             # who wrote what, from git history
+lore stats [--since 30d]    # what agents read, and what they failed to find
 ```
 
 ## Development

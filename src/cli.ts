@@ -1,4 +1,10 @@
-import { initRepo, searchRepo } from "./gitrepo.ts";
+import {
+  accessLogPath,
+  analyticsEnabled,
+  readAccessEvents,
+  summarize,
+} from "./access.ts";
+import { globRepo, initRepo, searchRepo } from "./gitrepo.ts";
 import { resolveIdentity } from "./identity.ts";
 import { LORE_VERSION, buildContext, defaultKbPath } from "./server.ts";
 import { type ToolContext, handleLoreLog, handleLoreRead } from "./tools.ts";
@@ -7,8 +13,9 @@ const USAGE = `Usage:
   lore mcp
   lore init
   lore search <pattern>
-  lore read <path>
+  lore read <path> [section]
   lore log [path]
+  lore stats [--since <N>d] [--limit <N>]
   lore install`;
 
 async function main(args: string[]): Promise<number> {
@@ -25,6 +32,8 @@ async function main(args: string[]): Promise<number> {
       return await runRead(args.slice(1));
     case "log":
       return await runLog(args.slice(1));
+    case "stats":
+      return await runStats(args.slice(1));
     case "install":
       return runInstall();
     default:
@@ -68,7 +77,10 @@ async function runRead(args: string[]): Promise<number> {
     return 1;
   }
   const ctx = await buildCliContext();
-  const result = await handleLoreRead(ctx, { path: args[0] });
+  const result = await handleLoreRead(ctx, {
+    path: args[0],
+    section: args[1],
+  });
   const text = result.content.map((c) => c.text).join("\n");
   if (result.isError) {
     console.error(text);
@@ -82,6 +94,78 @@ async function runLog(args: string[]): Promise<number> {
   const ctx = await buildCliContext();
   const result = await handleLoreLog(ctx, { path: args[0] });
   console.log(result.content.map((c) => c.text).join("\n"));
+  return 0;
+}
+
+async function runStats(args: string[]): Promise<number> {
+  const kb = process.env.AGENT_LORE_KB ?? defaultKbPath();
+  await initRepo(kb);
+
+  let sinceMs: number | undefined;
+  let limit = 10;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--since" && args[i + 1] !== undefined) {
+      const days = Number.parseInt(args[i + 1].replace(/d$/, ""), 10);
+      if (Number.isNaN(days)) {
+        console.error(`lore stats: bad --since value ${args[i + 1]}`);
+        return 1;
+      }
+      sinceMs = Date.now() - days * 24 * 60 * 60 * 1000;
+      i++;
+    } else if (args[i] === "--limit" && args[i + 1] !== undefined) {
+      const parsed = Number.parseInt(args[i + 1], 10);
+      if (Number.isNaN(parsed)) {
+        console.error(`lore stats: bad --limit value ${args[i + 1]}`);
+        return 1;
+      }
+      limit = parsed;
+      i++;
+    }
+  }
+
+  if (!analyticsEnabled()) {
+    console.log("Analytics are disabled (AGENT_LORE_NO_ANALYTICS=1).");
+  }
+  const summary = summarize(readAccessEvents(kb, sinceMs));
+  console.log(`log: ${accessLogPath(kb)}`);
+  const damaged =
+    summary.unparseable > 0
+      ? ` (${summary.unparseable} unparseable line(s))`
+      : "";
+  console.log(
+    `${summary.total} events from ${summary.sessions} session(s)${damaged}`,
+  );
+
+  if (summary.byTool.length > 0) {
+    console.log("\nBy tool:");
+    for (const row of summary.byTool) {
+      console.log(`  ${row.count}\t${row.tool}`);
+    }
+  }
+
+  if (summary.zeroResult.length > 0) {
+    console.log("\nFound nothing (write these pages):");
+    for (const row of summary.zeroResult.slice(0, limit)) {
+      console.log(`  ${row.count}\t${row.tool}\t${row.query}`);
+    }
+  }
+
+  if (summary.topPages.length > 0) {
+    console.log("\nMost-read pages:");
+    for (const row of summary.topPages.slice(0, limit)) {
+      console.log(`  ${row.reads}\t${row.path}`);
+    }
+  }
+
+  const allPages = await globRepo(kb, "**/*.md", true, true);
+  const unread = allPages.filter((p) => !summary.readPaths.has(p));
+  if (unread.length > 0) {
+    console.log("\nNever read:");
+    for (const page of unread.slice(0, limit)) {
+      console.log(`  ${page}`);
+    }
+  }
+
   return 0;
 }
 
