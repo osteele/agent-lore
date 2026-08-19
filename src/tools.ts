@@ -10,9 +10,11 @@ import {
   appendTalk,
   editRepoFiles,
   ensureLedger,
+  findRenamedTo,
   globRepo,
   initRepo,
   logRepo,
+  moveRepoFile,
   readRepoFile,
   searchRepo,
   writeRepoFile,
@@ -148,6 +150,24 @@ export const TOOL_SCHEMAS = [
         message: { type: "string", description: "Talk entry body" },
       },
       required: ["topic", "message"],
+    },
+  },
+  {
+    name: "lore_move",
+    description: "Rename a page and rewrite inbound wikilinks.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        from: {
+          type: "string",
+          description: "Repo-root-relative path to move",
+        },
+        to: {
+          type: "string",
+          description: "Repo-root-relative destination path",
+        },
+      },
+      required: ["from", "to"],
     },
   },
   {
@@ -287,6 +307,10 @@ export async function handleLoreRead(
     record(ctx, { tool: "lore_read", path: rel, results: 0 });
     const near = findNearMisses(ctx.kb, path.basename(rel));
     let message = `Page not found: ${args.path}`;
+    const renamed = await findRenamedTo(ctx.kb, rel);
+    if (renamed !== undefined) {
+      message += `\nIt was renamed to ${renamed}.`;
+    }
     if (near.length > 0) {
       message += `\nDid you mean: ${near.join(", ")}?`;
     }
@@ -444,6 +468,25 @@ export async function handleLoreLog(
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
+export async function handleLoreMove(
+  ctx: ToolContext,
+  args: { from: string; to: string },
+): Promise<{ content: { type: "text"; text: string }[]; isError?: boolean }> {
+  await ensureFirstContact(ctx);
+  const result = await moveRepoFile(ctx.kb, {
+    from: args.from,
+    to: args.to,
+    ...sharedWriteArgs(ctx),
+  });
+  let text = `Committed ${result.hash}`;
+  text += `\nMoved: ${result.moved.join(", ")}`;
+  text += `\nRewrote links in ${result.rewritten} page(s)`;
+  if (result.dangling.length > 0) {
+    text += `\nDangling wikilinks: ${result.dangling.join(", ")}`;
+  }
+  return { content: [{ type: "text", text }] };
+}
+
 function formatCommitResult(result: CommitResult): {
   content: { type: "text"; text: string }[];
   isError?: boolean;
@@ -451,6 +494,9 @@ function formatCommitResult(result: CommitResult): {
   let text = `Committed ${result.hash}`;
   if (result.dangling.length > 0) {
     text += `\nDangling wikilinks: ${result.dangling.join(", ")}`;
+  }
+  for (const note of result.notes) {
+    text += `\n${note}`;
   }
   return { content: [{ type: "text", text }] };
 }

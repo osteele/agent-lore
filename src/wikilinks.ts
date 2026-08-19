@@ -25,3 +25,19 @@ export function* iterWikilinks(content: string): Generator<string> {
     yield target;
   }
 }
+
+/**
+ * Rewrite every wikilink targeting `fromTarget` to target `toTarget`,
+ * preserving any display alias. Other links are left untouched.
+ */
+export function rewriteWikilinks(
+  content: string,
+  fromTarget: string,
+  toTarget: string,
+): string {
+  const escaped = fromTarget.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`\\[\\[${escaped}(\\|[^\\]\\n]*)?\\]\\]`, "g");
+  return content.replace(re, (_match, aliasPart) => {
+    return `[[${toTarget}${aliasPart ?? ""}]]`;
+  });
+}

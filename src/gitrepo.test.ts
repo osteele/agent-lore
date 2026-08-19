@@ -7,9 +7,11 @@ import {
   appendTalk,
   editRepoFiles,
   ensureLedger,
+  findRenamedTo,
   globRepo,
   initRepo,
   logRepo,
+  moveRepoFile,
   readRepoFile,
   searchRepo,
   writeRepoFile,
@@ -313,6 +315,206 @@ describe("gitrepo", () => {
       expect(lines.some((l) => l.includes("note.md"))).toBe(true);
       expect(lines.some((l) => l.includes("note.talk.md"))).toBe(false);
       expect(lines.some((l) => l.includes("sessions/searcher.md"))).toBe(false);
+    });
+  });
+
+  describe("moveRepoFile", () => {
+    it("moves a page and records it as a rename", async () => {
+      await writeRepoFile(kb, {
+        rel: "foo.md",
+        content: "# Foo\n",
+        identity: makeIdentity(),
+      });
+      const result = await moveRepoFile(kb, {
+        from: "foo.md",
+        to: "bar.md",
+        identity: makeIdentity("mover", "m-1"),
+      });
+      expect(fs.existsSync(path.join(kb, "bar.md"))).toBe(true);
+      expect(fs.existsSync(path.join(kb, "foo.md"))).toBe(false);
+      expect(result.moved).toEqual(["bar.md"]);
+      expect(result.rewritten).toBe(0);
+
+      const status = await git(kb, "status", "--porcelain");
+      expect(status).toBe("");
+      const diff = await git(kb, "diff", "HEAD~1", "HEAD", "--name-status");
+      expect(diff).toContain("R100");
+    });
+
+    it("moves the talk sibling in the same commit", async () => {
+      await writeRepoFile(kb, {
+        rel: "foo.md",
+        content: "# Foo\n",
+        identity: makeIdentity(),
+      });
+      await appendTalk(kb, {
+        topic: "foo",
+        message: "note",
+        entry: "entry",
+        identity: makeIdentity(),
+      });
+      const result = await moveRepoFile(kb, {
+        from: "foo.md",
+        to: "bar.md",
+        identity: makeIdentity("mover", "m-1"),
+      });
+      expect(result.moved).toContain("bar.md");
+      expect(result.moved).toContain("bar.talk.md");
+      expect(fs.existsSync(path.join(kb, "bar.talk.md"))).toBe(true);
+      expect(fs.existsSync(path.join(kb, "foo.talk.md"))).toBe(false);
+
+      const log = await git(kb, "log", "-1", "--pretty=format:%s");
+      expect(log).toContain("move foo.md -> bar.md");
+    });
+
+    it("rewrites inbound wikilinks in a third page", async () => {
+      await writeRepoFile(kb, {
+        rel: "foo.md",
+        content: "# Foo\n",
+        identity: makeIdentity(),
+      });
+      await writeRepoFile(kb, {
+        rel: "index.md",
+        content: "See [[foo|the foo page]].",
+        identity: makeIdentity(),
+      });
+      const result = await moveRepoFile(kb, {
+        from: "foo.md",
+        to: "bar.md",
+        identity: makeIdentity("mover", "m-1"),
+      });
+      expect(result.rewritten).toBe(1);
+      const content = await readRepoFile(kb, "index.md");
+      expect(content).toBe("See [[bar|the foo page]].");
+    });
+
+    it("refuses a sessions/ source", async () => {
+      await expect(
+        moveRepoFile(kb, {
+          from: "sessions/foo.md",
+          to: "bar.md",
+          identity: makeIdentity(),
+        }),
+      ).rejects.toThrow(/server-owned/);
+    });
+
+    it("refuses a sessions/ destination", async () => {
+      await writeRepoFile(kb, {
+        rel: "foo.md",
+        content: "x",
+        identity: makeIdentity(),
+      });
+      await expect(
+        moveRepoFile(kb, {
+          from: "foo.md",
+          to: "sessions/bar.md",
+          identity: makeIdentity(),
+        }),
+      ).rejects.toThrow(/server-owned/);
+    });
+
+    it("refuses a missing source", async () => {
+      await expect(
+        moveRepoFile(kb, {
+          from: "foo.md",
+          to: "bar.md",
+          identity: makeIdentity(),
+        }),
+      ).rejects.toThrow(/Source does not exist/);
+    });
+
+    it("refuses an existing destination", async () => {
+      await writeRepoFile(kb, {
+        rel: "foo.md",
+        content: "x",
+        identity: makeIdentity(),
+      });
+      await writeRepoFile(kb, {
+        rel: "bar.md",
+        content: "y",
+        identity: makeIdentity(),
+      });
+      await expect(
+        moveRepoFile(kb, {
+          from: "foo.md",
+          to: "bar.md",
+          identity: makeIdentity(),
+        }),
+      ).rejects.toThrow(/Destination already exists/);
+    });
+  });
+
+  describe("findRenamedTo", () => {
+    it("returns the current path when a file was renamed", async () => {
+      await writeRepoFile(kb, {
+        rel: "foo.md",
+        content: "# Foo\n",
+        identity: makeIdentity(),
+      });
+      await moveRepoFile(kb, {
+        from: "foo.md",
+        to: "bar.md",
+        identity: makeIdentity(),
+      });
+      const renamed = await findRenamedTo(kb, "foo.md");
+      expect(renamed).toBe("bar.md");
+    });
+
+    it("returns undefined when no rename exists", async () => {
+      await writeRepoFile(kb, {
+        rel: "foo.md",
+        content: "# Foo\n",
+        identity: makeIdentity(),
+      });
+      const renamed = await findRenamedTo(kb, "foo.md");
+      expect(renamed).toBeUndefined();
+    });
+  });
+
+  describe("dangling wikilink reporting", () => {
+    it("reports only newly introduced dangling links", async () => {
+      await writeRepoFile(kb, {
+        rel: "existing.md",
+        content: "[[old-dangle]]",
+        identity: makeIdentity(),
+      });
+      const first = await editRepoFiles(kb, {
+        edits: [
+          {
+            path: "existing.md",
+            old_string: "[[old-dangle]]",
+            new_string: "[[old-dangle]] [[new-dangle]]",
+          },
+        ],
+        identity: makeIdentity(),
+      });
+      expect(first.dangling).toEqual(["new-dangle"]);
+    });
+
+    it("reports a skill-named dangling link with the skill message", async () => {
+      const skillDir = path.join(tmp, "skills");
+      fs.mkdirSync(path.join(skillDir, "opencode"), { recursive: true });
+      const prev = process.env.AGENT_LORE_SKILL_DIRS;
+      process.env.AGENT_LORE_SKILL_DIRS = skillDir;
+      try {
+        const result = await writeRepoFile(kb, {
+          rel: "tools.md",
+          content: "Use [[tools/opencode]] for coding.",
+          identity: makeIdentity(),
+        });
+        // The skill note is not a topic worth writing, so it stays out of
+        // the dangling list and travels on its own channel.
+        expect(result.dangling).toHaveLength(0);
+        expect(result.notes).toHaveLength(1);
+        expect(result.notes[0]).toContain("opencode");
+        expect(result.notes[0]).toContain("installed skill");
+      } finally {
+        if (prev === undefined) {
+          Reflect.deleteProperty(process.env, "AGENT_LORE_SKILL_DIRS");
+        } else {
+          process.env.AGENT_LORE_SKILL_DIRS = prev;
+        }
+      }
     });
   });
 });

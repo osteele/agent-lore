@@ -11,12 +11,33 @@ import {
   resolveRepoPath,
 } from "./paths.ts";
 import { headingForLine, parseSections } from "./sections.ts";
+import { listSkillNames, skillForTarget } from "./skills.ts";
 import { formatTalkPage } from "./talk.ts";
-import { extractWikilinks } from "./wikilinks.ts";
+import { extractWikilinks, rewriteWikilinks } from "./wikilinks.ts";
 
 export interface CommitResult {
   hash: string;
   dangling: string[];
+  /**
+   * Advisory lines that are not dangling-link targets — a wikilink naming an
+   * installed skill, say. Kept apart so the dangling list stays a list of
+   * topics worth writing.
+   */
+  notes: string[];
+}
+
+export interface MoveResult extends CommitResult {
+  moved: string[];
+  rewritten: number;
+}
+
+export interface MoveArgs {
+  from: string;
+  to: string;
+  identity: Identity;
+  clientName?: string;
+  clientVersion?: string;
+  cwd?: string;
 }
 
 export interface LedgerEnsureArgs {
@@ -72,6 +93,46 @@ export async function readRepoFile(
   const { abs } = resolveRepoPath(input, kb);
   if (!fs.existsSync(abs)) return undefined;
   return fs.readFileSync(abs, "utf-8");
+}
+
+/**
+ * If `rel` was renamed away in git history, return the path it was most
+ * recently renamed to. Otherwise return undefined.
+ */
+export async function findRenamedTo(
+  kb: string,
+  rel: string,
+): Promise<string | undefined> {
+  const output = await git(kb, [
+    "log",
+    "--diff-filter=R",
+    "--name-status",
+    "--pretty=format:",
+  ]);
+  const renames = new Map<string, string>();
+  for (const line of output.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const parts = trimmed.split(/\s+/);
+    if (parts.length >= 3 && parts[0].startsWith("R")) {
+      const from = parts[1];
+      const to = parts[2];
+      if (!renames.has(from)) {
+        renames.set(from, to);
+      }
+    }
+  }
+  let current = rel;
+  let steps = 0;
+  const maxSteps = 100;
+  while (renames.has(current) && steps < maxSteps) {
+    const next = renames.get(current);
+    if (next === undefined) break;
+    current = next;
+    steps++;
+  }
+  if (current === rel) return undefined;
+  return current;
 }
 
 export async function globRepo(
@@ -217,11 +278,144 @@ export async function writeRepoFile(
       return { ok: true as const, failures: [] };
     },
     async apply() {
+      const beforeContent = new Map<string, string | undefined>();
+      beforeContent.set(
+        args.rel,
+        fs.existsSync(abs) ? fs.readFileSync(abs, "utf-8") : undefined,
+      );
       fs.mkdirSync(path.dirname(abs), { recursive: true });
       fs.writeFileSync(abs, args.content, "utf-8");
-      return [args.rel];
+      return { changed: [args.rel], beforeContent };
     },
   });
+}
+
+export async function moveRepoFile(
+  kb: string,
+  args: MoveArgs,
+): Promise<MoveResult> {
+  const fromRel = normalizeRepoPath(args.from);
+  const toRel = normalizeRepoPath(args.to);
+  assertNotSessions(fromRel, args.from);
+  assertNotSessions(toRel, args.to);
+
+  const fromResolved = resolveRepoPath(args.from, kb);
+  const toResolved = resolveRepoPath(args.to, kb);
+
+  if (!fs.existsSync(fromResolved.abs)) {
+    throw new Error(`Source does not exist: ${args.from}`);
+  }
+  if (fs.existsSync(toResolved.abs)) {
+    throw new Error(`Destination already exists: ${args.to}`);
+  }
+
+  const isTalkMove = fromRel.endsWith(".talk.md");
+  const fromNoteRel = isTalkMove
+    ? fromRel.replace(/\.talk\.md$/, ".md")
+    : fromRel;
+  const toNoteRel = isTalkMove ? toRel.replace(/\.talk\.md$/, ".md") : toRel;
+  const fromTalkRel = fromNoteRel.replace(/\.md$/, ".talk.md");
+  const toTalkRel = toNoteRel.replace(/\.md$/, ".talk.md");
+  const hasTalk = !isTalkMove && fs.existsSync(path.join(kb, fromTalkRel));
+
+  if (hasTalk && fs.existsSync(path.join(kb, toTalkRel))) {
+    throw new Error(`Destination talk page already exists: ${toTalkRel}`);
+  }
+
+  const fromTarget = fromNoteRel.replace(/\.md$/, "");
+
+  let movedPaths: string[] = [];
+  let rewrittenCount = 0;
+
+  const commitResult = await runWritePipeline(kb, {
+    identity: args.identity,
+    clientName: args.clientName,
+    clientVersion: args.clientVersion,
+    cwd: args.cwd,
+    toolName: "lore_move",
+    subject: `move ${fromRel} -> ${toRel}`,
+    async validate() {
+      return { ok: true as const, failures: [] };
+    },
+    async apply() {
+      const beforeContent = new Map<string, string | undefined>();
+
+      // Find other pages that link to the old target and record their content
+      // before we rewrite it.
+      const inbound = await findInboundLinkFiles(kb, fromTarget, fromRel);
+      for (const rel of inbound) {
+        const abs = path.join(kb, rel);
+        beforeContent.set(rel, fs.readFileSync(abs, "utf-8"));
+      }
+
+      // Record the content of the files being renamed so the dangling-link
+      // diff treats them as unchanged.
+      beforeContent.set(toRel, fs.readFileSync(fromResolved.abs, "utf-8"));
+      if (hasTalk) {
+        beforeContent.set(
+          toTalkRel,
+          fs.readFileSync(path.join(kb, fromTalkRel), "utf-8"),
+        );
+      }
+
+      await git(kb, ["mv", "--", fromRel, toRel]);
+      const changed: string[] = [toRel];
+      movedPaths = [toRel];
+      if (hasTalk) {
+        await git(kb, ["mv", "--", fromTalkRel, toTalkRel]);
+        changed.push(toTalkRel);
+        movedPaths.push(toTalkRel);
+      }
+
+      const toTarget = toNoteRel.replace(/\.md$/, "");
+      const rewritten: string[] = [];
+      for (const rel of inbound) {
+        const abs = path.join(kb, rel);
+        const oldContent = beforeContent.get(rel);
+        if (oldContent === undefined) {
+          throw new Error(
+            `Missing recorded content for inbound link file ${rel}`,
+          );
+        }
+        const newContent = rewriteWikilinks(oldContent, fromTarget, toTarget);
+        if (newContent !== oldContent) {
+          fs.writeFileSync(abs, newContent, "utf-8");
+          changed.push(rel);
+          rewritten.push(rel);
+        }
+      }
+      rewrittenCount = rewritten.length;
+
+      return { changed, beforeContent };
+    },
+  });
+
+  return {
+    hash: commitResult.hash,
+    dangling: commitResult.dangling,
+    notes: commitResult.notes,
+    moved: movedPaths,
+    rewritten: rewrittenCount,
+  };
+}
+
+async function findInboundLinkFiles(
+  kb: string,
+  target: string,
+  excludeRel: string,
+): Promise<string[]> {
+  const files = await globRepo(kb, "**/*.md", true, true);
+  const result: string[] = [];
+  for (const rel of files) {
+    if (rel === excludeRel) continue;
+    if (rel === `${target}.talk.md`) continue;
+    if (isSessionsPath(rel)) continue;
+    const content = fs.readFileSync(path.join(kb, rel), "utf-8");
+    if (extractWikilinks(content).includes(target)) {
+      result.push(rel);
+    }
+  }
+  return result;
 }
 
 export interface EditArgs {
@@ -308,17 +502,19 @@ export async function editRepoFiles(
           "Patch validation race: anchors changed during locking",
         );
       }
+      const beforeContent = new Map<string, string | undefined>();
       const changed: string[] = [];
       for (const [rel, content] of result.applied) {
         const resolvedPath = resolved.get(rel);
         if (!resolvedPath) {
           throw new Error(`Missing resolved path for ${rel}`);
         }
+        beforeContent.set(rel, read.current.get(rel));
         fs.mkdirSync(path.dirname(resolvedPath.abs), { recursive: true });
         fs.writeFileSync(resolvedPath.abs, content, "utf-8");
         changed.push(rel);
       }
-      return changed;
+      return { changed, beforeContent };
     },
   });
 }
@@ -354,13 +550,18 @@ export async function appendTalk(
     },
     async apply() {
       const exists = fs.existsSync(abs);
+      const beforeContent = new Map<string, string | undefined>();
+      beforeContent.set(
+        rel,
+        exists ? fs.readFileSync(abs, "utf-8") : undefined,
+      );
       if (!exists) {
         fs.mkdirSync(path.dirname(abs), { recursive: true });
         fs.writeFileSync(abs, formatTalkPage(args.topic), "utf-8");
       }
       const current = fs.readFileSync(abs, "utf-8");
       fs.writeFileSync(abs, current + args.entry, "utf-8");
-      return [rel];
+      return { changed: [rel], beforeContent };
     },
   });
 }
@@ -420,10 +621,12 @@ export async function ensureLedger(
           return { ok: true as const, failures: [] };
         },
         async apply() {
-          if (fs.existsSync(abs)) return [];
+          const beforeContent = new Map<string, string | undefined>();
+          beforeContent.set(ledgerRel, undefined);
+          if (fs.existsSync(abs)) return { changed: [], beforeContent };
           fs.mkdirSync(path.dirname(abs), { recursive: true });
           fs.writeFileSync(abs, content, "utf-8");
-          return [ledgerRel];
+          return { changed: [ledgerRel], beforeContent };
         },
       });
     })();
@@ -436,6 +639,11 @@ export async function ensureLedger(
     ledgerMutex.set(kb, pending);
   }
   await pending;
+}
+
+interface ApplyResult {
+  changed: string[];
+  beforeContent: Map<string, string | undefined>;
 }
 
 interface WritePipelineArgs {
@@ -457,7 +665,7 @@ interface WritePipelineArgs {
       }
     | { ok: true; failures: [] }
   >;
-  apply(): Promise<string[]>;
+  apply(): Promise<string[] | ApplyResult>;
 }
 
 async function runWritePipeline(
@@ -477,12 +685,18 @@ async function runWritePipeline(
       throw new PatchAnchorError(messages.join("\n---\n"));
     }
 
-    const changed = await args.apply();
+    const applyResult = await args.apply();
+    const changed = Array.isArray(applyResult)
+      ? applyResult
+      : applyResult.changed;
+    const beforeContent = Array.isArray(applyResult)
+      ? new Map<string, string | undefined>()
+      : applyResult.beforeContent;
     if (changed.length === 0) {
       // Nothing to record (e.g. a raced ledger creation): committing an empty
       // index would fail, and there is nothing to attribute anyway.
       const hash = (await git(kb, ["rev-parse", "HEAD"])).trim();
-      return { hash, dangling: [] };
+      return { hash, dangling: [], notes: [] };
     }
 
     for (const rel of changed) {
@@ -501,8 +715,14 @@ async function runWritePipeline(
     });
 
     const hash = (await git(kb, ["rev-parse", "HEAD"])).trim();
-    const dangling = findDangling(kb, changed);
-    return { hash, dangling };
+    const skillNames = await listSkillNames();
+    const { dangling, notes } = findDangling(
+      kb,
+      changed,
+      beforeContent,
+      skillNames,
+    );
+    return { hash, dangling, notes };
   } finally {
     release();
   }
@@ -580,24 +800,40 @@ function gitCommitEnv(
   };
 }
 
-function findDangling(kb: string, changedRels: string[]): string[] {
+function findDangling(
+  kb: string,
+  changedRels: string[],
+  beforeContent: Map<string, string | undefined>,
+  skillNames: Set<string>,
+): { dangling: string[]; notes: string[] } {
   const dangling: string[] = [];
+  const notes: string[] = [];
   const seen = new Set<string>();
   for (const rel of changedRels) {
     const abs = path.join(kb, rel);
     if (!fs.existsSync(abs)) continue;
     const content = fs.readFileSync(abs, "utf-8");
+    const oldContent = beforeContent.get(rel) ?? "";
+    const oldTargets = new Set(extractWikilinks(oldContent));
     for (const target of extractWikilinks(content)) {
       if (seen.has(target)) continue;
       seen.add(target);
+      if (oldTargets.has(target)) continue;
       const targetRel = normalizeRepoPath(`${target}.md`);
       const targetAbs = path.join(kb, targetRel);
       if (!fs.existsSync(targetAbs)) {
-        dangling.push(target);
+        const skill = skillForTarget(target, skillNames);
+        if (skill) {
+          notes.push(
+            `\`${target}\` names an installed skill; reference skills by name in backticks (\`${skill}\`), not as a page link.`,
+          );
+        } else {
+          dangling.push(target);
+        }
       }
     }
   }
-  return dangling;
+  return { dangling, notes };
 }
 
 async function acquireLock(kb: string): Promise<() => void> {

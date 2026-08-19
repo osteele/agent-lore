@@ -69,7 +69,8 @@ must be exactly this, with `{kb}` replaced by the resolved repo path:
 > provenance is preserved. Search covers notes only unless you ask for talk
 > pages, and each hit names its section so you can read just that part of a
 > long page. Wikilinks like [[weft/inputs]] connect topics; a dangling link
-> marks a topic worth writing.
+> marks a topic worth writing. A wikilink addresses a lore page — name a skill
+> in backticks instead, since skills are not pages here.
 
 ### Session identity (resolved once at startup)
 
@@ -143,7 +144,8 @@ return page content label talk pages and ledger pages as such.
    `section`, optional `offset`/`limit`. Output: `cat -n`-style line-numbered
    content, always with original line numbers. Reading a missing page returns
    a helpful error that includes near-miss suggestions (same basename
-   elsewhere in the repo) when any exist. Resolution order:
+   elsewhere in the repo) when any exist, and reports the current path if the
+   page was renamed away in git history. Resolution order:
    - `section` given → just that section (heading through the line before the
      next same-or-shallower heading, so subsections are included). Matching is
      forgiving: exact slug, exact heading, slug prefix, heading prefix,
@@ -188,12 +190,19 @@ return page content label talk pages and ledger pages as such.
    the *convenient* signed path; generic `lore_edit` on talk pages remains
    allowed for corrections.
 
-7. **`lore_log`** — recent history. Input: optional `path`, optional `limit`
+7. **`lore_move`** — rename a page. Input: `from`, `to`. Refuses `sessions/`
+   sources and destinations, missing sources, and existing destinations. Moves
+   the talk sibling `<topic>.talk.md` when one exists, and rewrites inbound
+   wikilinks in the same atomic commit. Records the rename with `git mv` so
+   provenance shows it as a rename. Reports the commit hash, paths moved, and
+   the number of pages whose links were rewritten.
+
+8. **`lore_log`** — recent history. Input: optional `path`, optional `limit`
    (default 20). Output: one line per commit — short hash, ISO date, author
    (session) name, subject. Gives agents cheap "who wrote this" without shell
    access to the repo.
 
-### Write pipeline (shared by write / edit / talk / ledger)
+### Write pipeline (shared by write / edit / talk / move / ledger)
 
 Serialized through a lock directory `<kb>/.lore-lock` acquired with `mkdir`
 (retry with short backoff; a lock older than 60s whose recorded pid is dead may
@@ -209,11 +218,17 @@ commit). Under the lock:
 3. Apply all edits; write files.
 4. Commit with the session's git identity. Subject: for `lore_write`,
    `write <path>`; for `lore_edit`, `edit <paths>`; for `lore_talk`,
-   `talk <topic>`. Trailers on every commit:
-   `Lore-Session: <sessionId>`, `Lore-Client: <clientInfo name>/<version>`,
-   `Lore-Project: <cwd>`.
+   `talk <topic>`; for `lore_move`, `move <from> -> <to>`. Trailers on every
+   commit: `Lore-Session: <sessionId>`,
+   `Lore-Client: <clientInfo name>/<version>`, `Lore-Project: <cwd>`.
 5. Release the lock. Report the commit hash and any dangling wikilinks the
    change introduced.
+
+Dangling links are reported only when a change *introduces* them: the pipeline
+compares wikilink targets before and after the edit, so pre-existing dangling
+links in an edited page stay silent. If a newly introduced dangling target's
+last path segment matches an installed skill name, the message names the skill
+and reminds callers to reference it in backticks rather than as a page link.
 
 Run git via `Bun.spawn` with explicit `-c user.name=… -c user.email=…` (or
 env `GIT_AUTHOR_*`/`GIT_COMMITTER_*`); never depend on or modify global git

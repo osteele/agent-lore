@@ -84,6 +84,7 @@ describe("createServer", () => {
       "lore_edit",
       "lore_glob",
       "lore_log",
+      "lore_move",
       "lore_read",
       "lore_search",
       "lore_talk",
@@ -101,6 +102,13 @@ describe("createServer", () => {
     );
     expect(text).toContain(
       "A search that turned up nothing is itself a page worth writing",
+    );
+  });
+
+  it("instructions tell callers to name skills in backticks", () => {
+    const text = buildInstructions("/tmp/kb");
+    expect(text).toContain(
+      "A wikilink addresses a lore page — name a skill in backticks instead, since skills are not pages here.",
     );
   });
 });

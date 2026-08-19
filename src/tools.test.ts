@@ -7,6 +7,7 @@ import { initRepo } from "./gitrepo.ts";
 import type { Identity } from "./identity.ts";
 import {
   type ToolContext,
+  handleLoreMove,
   handleLoreRead,
   handleLoreSearch,
   handleLoreWrite,
@@ -288,5 +289,78 @@ describe("handleLoreSearch", () => {
     const text = result.content[0].text;
     expect(text).toContain("Nothing matched. Possibly related:");
     expect(text).toContain("weft/inputs.md");
+  });
+});
+
+describe("handleLoreRead rename detection", () => {
+  let tmp: string;
+  let kb: string;
+  let ctx: ToolContext;
+
+  beforeEach(async () => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lore-read-rename-"));
+    kb = path.join(tmp, "kb");
+    await initRepo(kb);
+    process.env.AGENT_LORE_ACCESS_LOG = path.join(tmp, "access.jsonl");
+    ctx = {
+      kb,
+      identity: makeIdentity(),
+      cwd: tmp,
+      loreVersion: "0.1.0",
+    };
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    Reflect.deleteProperty(process.env, "AGENT_LORE_ACCESS_LOG");
+  });
+
+  it("reports the new location of a renamed page", async () => {
+    await handleLoreWrite(ctx, {
+      path: "foo.md",
+      content: "# Foo\n",
+    });
+    await handleLoreMove(ctx, { from: "foo.md", to: "bar.md" });
+    const result = await handleLoreRead(ctx, { path: "foo.md" });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("It was renamed to bar.md.");
+  });
+});
+
+describe("handleLoreMove", () => {
+  let tmp: string;
+  let kb: string;
+  let ctx: ToolContext;
+
+  beforeEach(async () => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lore-move-"));
+    kb = path.join(tmp, "kb");
+    await initRepo(kb);
+    ctx = {
+      kb,
+      identity: makeIdentity("mover", "m-1"),
+      cwd: tmp,
+      loreVersion: "0.1.0",
+    };
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("reports the commit hash, moved paths, and rewritten count", async () => {
+    await handleLoreWrite(ctx, {
+      path: "foo.md",
+      content: "# Foo\n",
+    });
+    await handleLoreWrite(ctx, {
+      path: "index.md",
+      content: "See [[foo]].",
+    });
+    const result = await handleLoreMove(ctx, { from: "foo.md", to: "bar.md" });
+    const text = result.content[0].text;
+    expect(text).toMatch(/Committed [0-9a-f]{40}/);
+    expect(text).toContain("Moved: bar.md");
+    expect(text).toContain("Rewrote links in 1 page(s)");
   });
 });

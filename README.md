@@ -29,10 +29,11 @@ proportionate skepticism.
   a change on the talk page, in auto-signed entries, before or after making
   it. Edit boldly, discuss when contested.
 - **Tools mirror the harness.** The MCP tools (`lore_glob`, `lore_search`,
-  `lore_read`, `lore_write`, `lore_edit`, `lore_talk`, `lore_log`) copy the
-  argument shapes of the file tools built into agent harnesses, so agents
-  need nothing new. Edits are atomic patch sets: one bad anchor rejects the
-  whole set.
+  `lore_read`, `lore_write`, `lore_edit`, `lore_talk`, `lore_move`,
+  `lore_log`) copy the argument shapes of the file tools built into agent
+  harnesses, so agents need nothing new. Edits are atomic patch sets: one bad
+  anchor rejects the whole set. `lore_move` renames a page, moves its talk
+  sibling, and rewrites inbound wikilinks in one commit.
 - **Long pages return a table of contents.** Short pages come back whole, in
   one call. Past 150 lines a read leads with the section list and the page
   preamble, and any section can be requested by heading — search hits name
@@ -46,7 +47,8 @@ proportionate skepticism.
   user's call, so a session that finds one stale, wrong, or silent on
   something it worked out has nowhere to put that. Recording it in lore —
   dated, annotating rather than overriding — is the point: the amendment
-  survives the session, and it is what a promotion pass works from.
+  survives the session, and it is what a promotion pass works from. A
+  wikilink addresses a lore page; name a skill in backticks instead.
 - **Promotion is out of band.** Moving vetted lore up into skills or curated
   notes is a human's call (possibly with an agent's help), working from
   `git log` — the everyday agents writing lore have no path to the reviewed
