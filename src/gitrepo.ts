@@ -12,6 +12,7 @@ import {
 } from "./paths.ts";
 import { headingForLine, parseSections } from "./sections.ts";
 import { listSkillNames, skillForTarget } from "./skills.ts";
+import { runCommand } from "./spawn.ts";
 import { formatTalkPage } from "./talk.ts";
 import { extractWikilinks, rewriteWikilinks } from "./wikilinks.ts";
 
@@ -141,18 +142,15 @@ export async function globRepo(
   includeTalk = false,
   includeSessions = false,
 ): Promise<string[]> {
-  const glob = new Bun.Glob(pattern);
   const matches: { rel: string; mtime: number }[] = [];
-  for await (const file of glob.scan({
-    cwd: kb,
-    absolute: false,
-    onlyFiles: true,
-  })) {
+  for (const file of fs.globSync(pattern, { cwd: kb })) {
     const rel = normalizeRepoPath(file);
     if (!includeTalk && rel.endsWith(".talk.md")) continue;
     if (!includeSessions && isSessionsPath(rel)) continue;
     const abs = path.join(kb, rel);
     const stat = fs.statSync(abs);
+    // globSync yields directories too; the repo holds only file pages.
+    if (!stat.isFile()) continue;
     matches.push({ rel, mtime: stat.mtimeMs });
   }
   matches.sort((a, b) => b.mtime - a.mtime);
@@ -921,19 +919,15 @@ async function git(
   args: string[],
   options: GitOptions = {},
 ): Promise<string> {
-  const proc = Bun.spawn(
-    [GIT_BIN, "-C", kb, "-c", "commit.gpgsign=false", ...args],
-    {
-      env: { ...process.env, ...options.env },
-      stdout: "pipe",
-      stderr: "pipe",
-    },
+  const {
+    stdout: outBuf,
+    stderr: errBuf,
+    code: exitCode,
+  } = await runCommand(
+    GIT_BIN,
+    ["-C", kb, "-c", "commit.gpgsign=false", ...args],
+    options.env,
   );
-  const [outBuf, errBuf] = await Promise.all([
-    Bun.readableStreamToText(proc.stdout),
-    Bun.readableStreamToText(proc.stderr),
-  ]);
-  const exitCode = await proc.exited;
   if (exitCode !== 0) {
     throw new Error(
       `git ${args.join(" ")} failed (${exitCode}): ${errBuf.trim()}\n${outBuf.trim()}`,

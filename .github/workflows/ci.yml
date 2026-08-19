@@ -29,9 +29,44 @@ jobs:
       - name: Test
         run: bun test
 
-  # `bun test` runs from the checkout, where the entry point is a source file
-  # and every dependency is already installed. This job installs the package
-  # the way the README tells people to and asserts the server answers.
+  # The runtime is Node-compatible; only the dev tooling and tests use Bun.
+  # This job is what keeps a Bun-only API from creeping back into src/.
+  node:
+    name: node ${{ matrix.node-version }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        # 22 is the floor in package.json engines, set by fs.globSync rather
+        # than by anything about TypeScript: the published bin is compiled JS.
+        node-version: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Answer an MCP handshake under Node
+        shell: bash
+        run: |
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+            | node src/cli.ts mcp > handshake.json
+          cat handshake.json
+          grep -q '"serverInfo"' handshake.json
+      - name: Exercise the write pipeline under Node
+        shell: bash
+        run: |
+          node src/cli.ts init
+          node src/cli.ts search . || true
+          node src/cli.ts stats
+
+  # The decisive job. Node refuses to strip types under node_modules, so a
+  # package whose bin is a .ts file installs fine and dies on first run. Only
+  # an install-then-run under Node catches that; the checkout never will.
   install:
     runs-on: ubuntu-latest
 
@@ -40,13 +75,16 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - name: Run the server from a packed install
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run the packed install under Node
         run: |
           bun pm pack --filename /tmp/agent-lore.tgz
           mkdir /tmp/consumer && cd /tmp/consumer
-          bun init -y >/dev/null
-          bun add /tmp/agent-lore.tgz
+          npm init -y >/dev/null
+          npm install /tmp/agent-lore.tgz
           printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
-            | ./node_modules/.bin/lore mcp > handshake.json
+            | node ./node_modules/.bin/lore mcp > handshake.json
           cat handshake.json
           grep -q '"serverInfo"' handshake.json

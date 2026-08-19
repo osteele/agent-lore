@@ -12,6 +12,7 @@ import type {
 } from "@modelcontextprotocol/sdk/types.js";
 import { initRepo } from "./gitrepo.ts";
 import { resolveIdentity } from "./identity.ts";
+import { runCommand } from "./spawn.ts";
 import {
   TOOL_SCHEMAS,
   type ToolContext,
@@ -129,17 +130,11 @@ async function parentCommand(ppid: number): Promise<string | undefined> {
 }
 
 async function runPs(args: string[]): Promise<string> {
-  const proc = Bun.spawn(["ps", ...args], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const out = await Bun.readableStreamToText(proc.stdout);
-  const err = await Bun.readableStreamToText(proc.stderr);
-  const code = await proc.exited;
+  const { stdout, stderr, code } = await runCommand("ps", args);
   if (code !== 0) {
-    throw new Error(`ps failed (${code}): ${err.trim()}`);
+    throw new Error(`ps failed (${code}): ${stderr.trim()}`);
   }
-  return out;
+  return stdout;
 }
 
 function parsePsLstart(raw: string): Date | undefined {
@@ -301,11 +296,4 @@ export async function runServer(kbOverride?: string): Promise<void> {
   const server = createServer(ctx);
   const transport = new StdioServerTransport();
   await server.connect(transport);
-}
-
-if (import.meta.main) {
-  runServer().catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
 }

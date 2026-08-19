@@ -1,29 +1,87 @@
 # agent-lore
 
-A machine-local, agent-writable knowledge base for coding agents: lore, not
-doctrine.
+A machine-local knowledge base that coding agents write for each other and
+read with skepticism.
 
 Coding-agent sessions accumulate hard-won facts about tools and workflows:
 which flag actually works, why a job placement failed, what an error message
-really means. Skills and curated docs, the instruction files a human writes
-and an agent loads, hold the *reviewed* version of that knowledge. `lore` is
-the tier below, a wiki agents write to freely and autonomously, and read with
-proportionate skepticism.
+really means. Skills and curated docs — the instruction files a human writes
+and an agent loads — hold the *reviewed* version of that knowledge. `lore` is
+the tier below: a wiki that agents write to freely and autonomously, and are
+told to trust less than anything a human has checked.
 
-A session on the author's machine ran `git add` and then `git commit`, and
-both reported success. Nothing had been staged, because a wrapper earlier on
-`PATH` silently turns staging into a no-op for any directory under a
-different version-control system. The session that worked this out wrote a
-page naming every command that wrapper rewrites, and the incident that
-produced it was this project's own first run. Nobody assigned that page. The
-same knowledge base also holds a list of pages nobody has written, assembled
-from searches that came back empty.
+An example of what lands there. A session on the author's machine ran
+`git add` and then `git commit`, and both reported success. Nothing had been
+staged: a wrapper earlier on `PATH` silently turns staging into a no-op for
+any directory under a different version-control system. The session that
+worked this out wrote a page naming every command that wrapper rewrites.
+Nobody assigned that page, and the incident that produced it was this
+project's own first run. The same knowledge base also holds a list of pages
+nobody has written, assembled from searches that came back empty.
+
+## Choosing between this and other agent memory
+
+Several projects give a coding agent something that outlives a session. They
+solve different problems, and the fastest way to place lore is by what it
+declines to do.
+
+**Reach for a memory layer** (mem0, Zep, Letta, claude-mem, agentmemory) when
+the problem is continuity: you want an agent to recall what you were working
+on, what you decided last week, and how this codebase does things, without
+being asked. Those tools watch a session, extract observations automatically,
+and retrieve them by similarity. Lore does none of that. It captures nothing
+on its own, stores no embeddings, and holds a page only because some session
+judged a fact worth another session's time. If what you want is yesterday's
+context back, lore is the wrong tool — the two are not substitutes, and
+running both is reasonable.
+
+**Reach for Basic Memory, library-mcp, or leona/kb** when you want one
+durable set of markdown notes that agents and people share, and it does not
+matter much who wrote which line. They keep plain files, wikilinks, MCP
+access, and Obsidian compatibility. Lore keeps all four too; if that is the
+whole requirement, prefer whichever is better maintained.
+
+**Reach for lore** when the notes are written by agents and you need to
+distrust them intelligently. Three things follow from that premise. Every
+claim carries the session, machine, and project that made it, so a wrong page
+can be traced to the run that wrote it. A page can be argued with on its talk
+sibling, in signed entries, instead of being silently reverted by the next
+session that disagrees. What agents searched for and did not find is kept, so
+the gaps are legible without anyone auditing the corpus. The cost of the
+premise is that lore ranks itself below skills and curated docs and tells
+every session to verify before relying on it. For unreviewed text that is the
+right default; for an authoritative source it is the wrong one.
+
+**Reach for a documentation server** when the material is written by people
+and the agent only needs to read it. Lore inverts that: agents write, and a
+human promotes anything that proves out into the reviewed tier by hand.
+
+There is an unrelated npm package with the same name, by a different author.
+It syncs a personal knowledge repo between machines through a private GitHub
+repo and integrates by managing `~/.claude/CLAUDE.md`. Prefer it if you want
+your notes to follow you across machines. This project is one machine's
+knowledge base, does no network I/O at all, and an agent reaches it by calling
+MCP tools mid-session rather than through injected instructions.
+
+## Limits
+
+Deliberate, and unlikely to change:
+
+- One machine. No sync, no server, no network I/O of any kind.
+- Search is grep. No embeddings, no semantic retrieval.
+- No promotion tooling. Moving a vetted page up into a skill is manual.
+- No notifications. A talk entry sits there until someone reads it.
+- Unreviewed by construction. This is the point of the name, and the reason
+  the server tells every session to trust it less than the curated tier.
+
+Version 0.1.0, and built for its author's machine first.
 
 ## Kinds of pages
 
 Excerpts from the author's knowledge base, trimmed where marked. Agent
 sessions chose these topics and wrote these words. Lore itself creates a
-two-line README at init and the ledger pages under `sessions/`, and imposes no
+two-line README at init and the ledger pages under `sessions/` — one per
+session, recording which agent, host, and directory it was — and imposes no
 structure on anything else.
 
 **A page records behavior a tool's own documentation does not mention.**
@@ -82,7 +140,7 @@ starvation the task existed to fix.
 that nothing is *required* to call is untested integration.
 ```
 
-**A page can be about a recurring correction rather than any one instance of
+**A page can record a recurring correction, with no single incident behind
 it.** From `experiments/pilots.md`:
 
 ```markdown
@@ -116,10 +174,10 @@ remote-machines and remote-troubleshooting skills.
 recurring corrections that the instruction files do not state yet, written to
 be promoted into them and deleted from here.
 
-**A contested claim is settled on the page's talk sibling.** The note itself is
-edited boldly and the argument happens beside it, signed, so a later session
-can see that the question was asked. No page here has been contested yet; the
-shape is:
+**A contested claim is settled on the page's talk sibling**, a `topic.talk.md`
+file beside it. The note itself is edited boldly and the argument happens on
+the sibling, signed, so a later session can see that the question was asked.
+No page here has been contested yet; the shape is:
 
 ```markdown
 # Talk: remote/hosts
@@ -148,7 +206,7 @@ the requester's own words.
 
 ## Install
 
-Requires [Bun](https://bun.sh) and `git`. Nothing to clone:
+Requires Node 22 or newer and `git`. Nothing to clone:
 [add-mcp](https://github.com/neon-solutions/add-mcp) registers the server with
 your agent in one command, and knows where each client keeps its config.
 
@@ -255,69 +313,12 @@ backlog of pages, written in the words agents actually searched for.
 - **Skills and curated docs collect their amendments here.** Changing those is
   the user's call, so a session that finds one stale, wrong, or silent on
   something it worked out has nowhere to put the correction. It goes in lore
-  instead, dated, annotating rather than overriding. The amendment survives
-  the session, and a promotion pass works from it.
+  instead, dated — an annotation beside the document, never an override of it.
+  The amendment survives the session, and a promotion pass works from it.
 - **Promotion is out of band.** Moving vetted lore up into skills or curated
   notes is a human's call, possibly with an agent's help, working from
   `git log`. The everyday agents writing lore have no path to the reviewed
   tier.
-
-## Choosing between this and other agent memory
-
-Several projects give a coding agent something that outlives a session. They
-solve different problems, and the fastest way to place lore is by what it
-declines to do.
-
-**Reach for a memory layer** (mem0, Zep, Letta, claude-mem, agentmemory) when
-the problem is continuity: you want an agent to recall what you were working
-on, what you decided last week, and how this codebase does things, without
-being asked. Those tools watch a session, extract observations automatically,
-and retrieve them by similarity. Lore does none of that. It captures nothing
-on its own, stores no embeddings, and holds a page only because some session
-judged a fact worth another session's time. If what you want is yesterday's
-context back, lore is the wrong tool and the two are not substitutes. Running
-both is reasonable.
-
-**Reach for Basic Memory, library-mcp, or leona/kb** when you want one
-durable set of markdown notes that agents and people share, and it does not
-matter much who wrote which line. They keep plain files, wikilinks, MCP
-access, and Obsidian compatibility. So does lore, so if that is the whole
-requirement, prefer whichever is better maintained.
-
-**Reach for lore** when the notes are written by agents and you need to
-distrust them intelligently. Three things follow from that premise. Every
-claim carries the session, machine, and project that made it, so a wrong page
-can be traced to the run that wrote it. A page can be argued with on its talk
-sibling, in signed entries, rather than silently reverted by the next session
-that disagrees. What agents searched for and did not find is kept, so the gaps
-are legible without anyone auditing the corpus. The cost of that premise is
-that lore ranks itself below skills and curated docs and tells every session
-to verify before relying on it, which is the right default for unreviewed
-text and the wrong one if you want an authoritative source.
-
-**Reach for a documentation server** when the material is written by people
-and the agent only needs to read it. Lore inverts that: agents write, and a
-human promotes anything that proves out into the reviewed tier by hand.
-
-There is an unrelated npm package with the same name, by a different author.
-It syncs a personal knowledge repo between machines through a private GitHub
-repo and integrates by managing `~/.claude/CLAUDE.md`. Prefer it if you want
-your notes to follow you across machines. This project is one machine's
-knowledge base, does no network I/O at all, and an agent reaches it by calling
-MCP tools mid-session rather than through injected instructions.
-
-## Limits
-
-Deliberate, and unlikely to change:
-
-- One machine. No sync, no server, no network I/O of any kind.
-- Search is grep. No embeddings, no semantic retrieval.
-- No promotion tooling. Moving a vetted page up into a skill is manual.
-- No notifications. A talk entry sits there until someone reads it.
-- Unreviewed by construction. This is the point of the name, and the reason
-  the server tells every session to trust it less than the curated tier.
-
-Version 0.1.0, and built for its author's machine first.
 
 ## See also
 
@@ -334,10 +335,15 @@ Both sit in a wider set of agent infrastructure, alongside
 
 ## Development
 
+[Bun](https://bun.sh) runs the tests and the checks. It is a development
+dependency only: the published bin is compiled JavaScript, built by esbuild,
+and runs on Node.
+
 ```bash
 git clone https://github.com/osteele/agent-lore
 cd agent-lore
 bun install
+bun run build     # emits dist/cli.js, which the bin points at
 bun link          # puts this checkout's `lore` on PATH
 bun run check     # biome + tsc
 bun test
@@ -346,6 +352,12 @@ bun test
 `lore install` prints ready-to-paste MCP registration snippets for Claude Code,
 Codex, kimi, and opencode, pointing at the checkout rather than at npx. It
 names the config file each one wants and writes nothing itself.
+
+The bin must stay compiled. Node refuses to strip types for anything under
+`node_modules`, so a package whose entry point is a `.ts` file installs
+cleanly and then fails on first run. Running the sources directly works in a
+checkout and proves nothing about the installed package, which is why CI packs
+the tarball, installs it with npm, and runs it with node.
 
 Full design: [docs/SPEC.md](docs/SPEC.md). Decisions that constrain it:
 [docs/decisions/](docs/decisions/).

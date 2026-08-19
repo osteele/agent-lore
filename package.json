@@ -3,14 +3,19 @@
   "version": "0.1.0",
   "description": "Machine-local, agent-writable knowledge base with git provenance and a session ledger",
   "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "bin": {
-    "lore": "src/cli.ts"
+    "lore": "dist/cli.js"
   },
   "scripts": {
     "check": "biome check src/ && tsc --noEmit",
     "fix": "biome check --write src/",
-    "test": "bun test"
+    "test": "bun test",
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/cli.js",
+    "prepare": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0"
@@ -18,6 +23,12 @@
   "devDependencies": {
     "@biomejs/biome": "^1.9.0",
     "@types/bun": "latest",
+    "esbuild": "^0.28.2",
     "typescript": "^5.6.0"
-  }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ]
 }
