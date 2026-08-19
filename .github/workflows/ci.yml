@@ -28,3 +28,25 @@ jobs:
 
       - name: Test
         run: bun test
+
+  # `bun test` runs from the checkout, where the entry point is a source file
+  # and every dependency is already installed. This job installs the package
+  # the way the README tells people to and asserts the server answers.
+  install:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Run the server from a packed install
+        run: |
+          bun pm pack --filename /tmp/agent-lore.tgz
+          mkdir /tmp/consumer && cd /tmp/consumer
+          bun init -y >/dev/null
+          bun add /tmp/agent-lore.tgz
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+            | ./node_modules/.bin/lore mcp > handshake.json
+          cat handshake.json
+          grep -q '"serverInfo"' handshake.json
