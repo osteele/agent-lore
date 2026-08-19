@@ -5,8 +5,16 @@ import {
   readAccessEvents,
   summarize,
 } from "./access.ts";
-import { globRepo, initRepo, searchRepo } from "./gitrepo.ts";
+import {
+  globRepo,
+  initRepo,
+  readRepoFile,
+  recentlyModifiedFiles,
+  searchRepo,
+} from "./gitrepo.ts";
 import { resolveIdentity } from "./identity.ts";
+import { isSessionsPath } from "./paths.ts";
+import { type Section, findSection, parseSections } from "./sections.ts";
 import { LORE_VERSION, buildContext, defaultKbPath } from "./server.ts";
 import { type ToolContext, handleLoreLog, handleLoreRead } from "./tools.ts";
 
@@ -17,6 +25,7 @@ const USAGE = `Usage:
   lore read <path> [section]
   lore log [path]
   lore stats [--since <N>d] [--limit <N>]
+  lore digest [--since <N>d] [--sections <a,b,c>]
   lore install`;
 
 async function main(args: string[]): Promise<number> {
@@ -35,6 +44,8 @@ async function main(args: string[]): Promise<number> {
       return await runLog(args.slice(1));
     case "stats":
       return await runStats(args.slice(1));
+    case "digest":
+      return await runDigest(args.slice(1));
     case "install":
       return runInstall();
     default:
@@ -168,6 +179,96 @@ async function runStats(args: string[]): Promise<number> {
   }
 
   return 0;
+}
+
+const DEFAULT_DIGEST_SECTIONS = [
+  "Quirks and gotchas",
+  "Wanted",
+  "Rough edges",
+  "What worked",
+];
+
+async function runDigest(args: string[]): Promise<number> {
+  const kb = process.env.AGENT_LORE_KB ?? defaultKbPath();
+  await initRepo(kb);
+
+  let sinceDays = 7;
+  let sectionNames = [...DEFAULT_DIGEST_SECTIONS];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--since" && args[i + 1] !== undefined) {
+      const days = Number.parseInt(args[i + 1].replace(/d$/, ""), 10);
+      if (Number.isNaN(days)) {
+        console.error(`lore digest: bad --since value ${args[i + 1]}`);
+        return 1;
+      }
+      sinceDays = days;
+      i++;
+    } else if (args[i] === "--sections" && args[i + 1] !== undefined) {
+      sectionNames = args[i + 1]
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s !== "");
+      i++;
+    }
+  }
+
+  const sinceMs = Date.now() - sinceDays * 24 * 60 * 60 * 1000;
+  const files = await recentlyModifiedFiles(
+    kb,
+    new Date(sinceMs).toISOString(),
+  );
+  const candidates = files.filter(
+    (f) => !isSessionsPath(f.path) && f.path !== "README.md",
+  );
+
+  let printedAny = false;
+  for (const file of candidates) {
+    const content = await readRepoFile(kb, file.path);
+    if (content === undefined) continue;
+    const sections = parseSections(content);
+    const matches = sectionNames
+      .map((name) => findSection(sections, name))
+      .filter((s): s is Section => s !== undefined);
+
+    let fileText = "";
+    for (const section of matches) {
+      const body = extractSectionBody(content, section).trim();
+      if (body === "") continue;
+      if (isPlaceholderBody(body)) continue;
+      if (fileText === "") {
+        fileText += `${file.path} — ${file.author}, ${file.date}`;
+      }
+      fileText += `\n\n## ${section.heading}\n${body}`;
+    }
+
+    if (fileText !== "") {
+      console.log(fileText);
+      printedAny = true;
+    }
+  }
+
+  if (!printedAny) {
+    console.log(`No qualifying sections in the last ${sinceDays} days.`);
+  }
+
+  return 0;
+}
+
+function extractSectionBody(content: string, section: Section): string {
+  const lines = content.split("\n");
+  const from = section.startLine; // heading line
+  const to = section.endLine;
+  const bodyLines: string[] = [];
+  for (let i = from; i <= to && i <= lines.length; i++) {
+    // Skip the heading line itself.
+    if (i === section.startLine) continue;
+    bodyLines.push(lines[i - 1]);
+  }
+  return bodyLines.join("\n");
+}
+
+function isPlaceholderBody(body: string): boolean {
+  return body.trim().toLowerCase().startsWith("nothing recorded yet");
 }
 
 function runInstall(): number {

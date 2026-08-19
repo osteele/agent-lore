@@ -19,6 +19,7 @@ import {
 } from "./gitrepo.ts";
 import type { Identity } from "./identity.ts";
 import { isSessionsPath, normalizeRepoPath, resolveRepoPath } from "./paths.ts";
+import { findRelated } from "./related.ts";
 import {
   findSection,
   numberLines,
@@ -255,6 +256,10 @@ export async function handleLoreSearch(
     query: args.pattern,
     results: lines.length,
   });
+  if (lines.length === 0) {
+    const text = await relatedSearchHint(ctx.kb, args.pattern);
+    return { content: [{ type: "text", text }] };
+  }
   let text = lines.join("\n");
   if (capped) {
     text += `\n(Output capped at ${SEARCH_LIMIT} matches)`;
@@ -375,12 +380,17 @@ export async function handleLoreWrite(
 ): Promise<{ content: { type: "text"; text: string }[]; isError?: boolean }> {
   await ensureFirstContact(ctx);
   const rel = normalizeRepoPath(args.path);
+  const existed = (await readRepoFile(ctx.kb, args.path)) !== undefined;
   const result = await writeRepoFile(ctx.kb, {
     rel,
     content: args.content,
     ...sharedWriteArgs(ctx),
   });
-  return formatCommitResult(result);
+  let text = formatCommitResult(result).content[0].text;
+  if (!existed) {
+    text = await appendRelated(text, ctx.kb, rel, extractTitle(args.content));
+  }
+  return { content: [{ type: "text", text }] };
 }
 
 export async function handleLoreEdit(
@@ -468,4 +478,60 @@ function findNearMisses(kb: string, basename: string): string[] {
   }
   walk(kb, "");
   return matches;
+}
+
+function extractTitle(content: string): string | undefined {
+  const match = /^#\s+(.+)$/m.exec(content);
+  return match?.[1].trim();
+}
+
+function patternToSyntheticPath(pattern: string): string {
+  const slug = pattern
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase();
+  return slug === "" ? "search.md" : `search/${slug}.md`;
+}
+
+async function listNotePaths(kb: string): Promise<string[]> {
+  return globRepo(kb, "**/*.md", false, false);
+}
+
+async function appendRelated(
+  text: string,
+  kb: string,
+  rel: string,
+  title?: string,
+): Promise<string> {
+  // Advisory: the commit has already landed, so a failure here must not turn a
+  // successful write into an error the caller might retry. Report it in the
+  // result rather than swallowing it — a silent skip would hide the bug.
+  let existing: string[];
+  try {
+    existing = await listNotePaths(kb);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return `${text}\n(related-page check failed: ${detail})`;
+  }
+  // The page we just wrote is already on disk; exclude it from the candidate set.
+  const candidates = existing.filter((p) => p !== rel);
+  const findings = findRelated(rel, candidates, title);
+  if (findings.length === 0) return text;
+  return `${text}\nRelated:\n${findings.map((f) => `- ${f.message}`).join("\n")}`;
+}
+
+async function relatedSearchHint(kb: string, pattern: string): Promise<string> {
+  // Advisory, as in appendRelated: report the failure rather than hiding it
+  // behind a bare "nothing matched", which would read as a clean empty result.
+  let existing: string[];
+  try {
+    existing = await listNotePaths(kb);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return `Nothing matched.\n(related-page check failed: ${detail})`;
+  }
+  const findings = findRelated(patternToSyntheticPath(pattern), existing);
+  if (findings.length === 0) return "Nothing matched.";
+  const lines = findings.map((f) => `- ${f.message}`);
+  return `Nothing matched. Possibly related:\n${lines.join("\n")}`;
 }

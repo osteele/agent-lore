@@ -77,6 +77,8 @@ lore search <pattern>       # grep the notes (talk pages excluded by default)
 lore read <path> [section]
 lore log [path]             # who wrote what, from git history
 lore stats [--since 30d]    # what agents read, and what they failed to find
+lore digest [--since 7d] [--sections <a,b,c>]
+                            # recent contributions in the "kind" sections
 ```
 
 ## Development

@@ -4,7 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { LORE_VERSION, buildContext, createServer } from "./server.ts";
+import {
+  LORE_VERSION,
+  buildContext,
+  buildInstructions,
+  createServer,
+} from "./server.ts";
 
 describe("buildContext", () => {
   let tmp: string;
@@ -87,5 +92,15 @@ describe("createServer", () => {
 
     await client.close();
     await server.close();
+  });
+
+  it("instructions include the search-before-write guidance", () => {
+    const text = buildInstructions("/tmp/kb");
+    expect(text).toContain(
+      "Search before you create a page and extend the existing one where there is one",
+    );
+    expect(text).toContain(
+      "A search that turned up nothing is itself a page worth writing",
+    );
   });
 });

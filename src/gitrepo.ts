@@ -148,6 +148,49 @@ export async function logRepo(
   return output === "" ? [] : output.split("\n");
 }
 
+export interface RecentFile {
+  path: string;
+  author: string;
+  date: string;
+}
+
+export async function recentlyModifiedFiles(
+  kb: string,
+  sinceIso: string,
+): Promise<RecentFile[]> {
+  const output = await git(kb, [
+    "log",
+    `--since=${sinceIso}`,
+    "--name-only",
+    "--pretty=format:",
+  ]);
+  const touched = output
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l !== "" && !l.endsWith("/"));
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const p of touched) {
+    if (seen.has(p)) continue;
+    seen.add(p);
+    ordered.push(p);
+  }
+  const result: RecentFile[] = [];
+  for (const p of ordered) {
+    const info = await git(kb, [
+      "log",
+      "-1",
+      "--pretty=format:%aI %an",
+      "--",
+      p,
+    ]);
+    const match = /^(\S+)\s+(.+)$/.exec(info.trim());
+    if (!match) continue;
+    result.push({ path: p, date: match[1], author: match[2] });
+  }
+  return result;
+}
+
 export interface WriteArgs {
   rel: string;
   content: string;

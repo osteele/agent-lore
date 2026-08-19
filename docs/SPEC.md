@@ -62,10 +62,14 @@ must be exactly this, with `{kb}` replaced by the resolved repo path:
 > annotates. Write freely and early:
 > record non-obvious facts you establish, correct or contest entries you find
 > wrong (use lore_talk on the topic's talk page to discuss), and don't wait
-> for polish. Every change is committed under your session identity, so
+> for polish. Search before you create a page and extend the existing one where
+> there is one — a second page on the same subject splits the knowledge and
+> neither half gets found. A search that turned up nothing is itself a page
+> worth writing. Every change is committed under your session identity, so
 > provenance is preserved. Search covers notes only unless you ask for talk
-> pages. Wikilinks like [[weft/inputs]] connect topics; a dangling link marks
-> a topic worth writing.
+> pages, and each hit names its section so you can read just that part of a
+> long page. Wikilinks like [[weft/inputs]] connect topics; a dangling link
+> marks a topic worth writing.
 
 ### Session identity (resolved once at startup)
 
@@ -215,6 +219,35 @@ Run git via `Bun.spawn` with explicit `-c user.name=… -c user.email=…` (or
 env `GIT_AUTHOR_*`/`GIT_COMMITTER_*`); never depend on or modify global git
 config. `commit.gpgsign=false` for the data repo's commits.
 
+### Related-page suggestions
+
+To reduce forked namespaces and duplicate pages, `lore_write` (when creating a
+new page) and zero-result `lore_search` calls append advisory "Related"
+suggestions. These are computed from the current note pages (talk pages and
+`sessions/` excluded) and never block or fail the underlying operation.
+
+`findRelated(newPath, existingPaths, title?)` returns findings in priority
+order:
+
+1. **`namespace-prefix`** — the new path's first segment is a nested directory
+   that resembles an existing top-level directory. Resemblance means: one is a
+   case-insensitive prefix of the other; they differ only by a trailing `s`;
+   or they share a common prefix of at least 3 characters and have Levenshtein
+   distance ≤ 3 (so `tools/` matches `tooling/`). The finding names both
+   directories and the page count of the existing one.
+2. **`directory-shadows-page`** — a new nested directory's first segment equals
+   the stem of an existing page's basename anywhere in the repo (e.g.
+   `agent-review/...` when `tooling/agent-review.md` exists).
+3. **`similar-topic`** — token overlap. Path stems and the optional title are
+   tokenized on `/`, `-`, and `_`; tokens shorter than 3 characters and a
+   small stopword set are dropped. Existing pages sharing ≥ 2 tokens are
+   reported, as are pages sharing 1 token when that token appears in fewer than
+   4 existing pages. At most 5 pages are returned, ranked by overlap count then
+   path. Paths already named by a higher-priority finding are not repeated.
+
+For zero-result searches, the query is converted into a synthetic path (non-
+alphanumerics become `-`) and matched the same way.
+
 ## Read-side analytics
 
 Writes are recorded in git. Reads and searches are not, so they append to a
@@ -248,6 +281,10 @@ skipped.
 - `lore stats [--since <N>d] [--limit <N>]` — read-side analytics: events by
   tool, zero-result queries ranked by frequency, most-read pages, and pages
   never read.
+- `lore digest [--since <N>d] [--sections <a,b,c>]` — recent contributions in
+  the "kind" sections agents are asked to fill (`Quirks and gotchas`,
+  `Wanted`, `Rough edges`, `What worked` by default). Excludes `sessions/`
+  and `README.md`; skips placeholder bodies (`Nothing recorded yet.`).
 - `lore install` — print (do not write) the JSON/TOML snippets for
   registering the server with Claude Code (`~/.claude.json` user-scope
   `mcpServers`) and Codex (`~/.codex/config.toml`). v1 deliberately does not

@@ -71,6 +71,64 @@ describe("handleLoreWrite", () => {
     const writeIndex = lines.findIndex((l) => l.includes("write note.md"));
     expect(writeIndex).toBeLessThan(ledgerIndex);
   });
+
+  it("appends related findings for a new page", async () => {
+    const ctx = {
+      kb,
+      identity: makeIdentity(),
+      cwd: tmp,
+      loreVersion: "0.1.0",
+    };
+    await handleLoreWrite(ctx, {
+      path: "tooling/agent-review.md",
+      content: "# Agent Review\n",
+    });
+    const result = await handleLoreWrite(ctx, {
+      path: "agent-review/entity-graph.md",
+      content: "# Entity Graph\n",
+    });
+    const text = result.content[0].text;
+    expect(text).toContain("Related:");
+    expect(text).toContain("tooling/agent-review.md");
+  });
+
+  it("appends nothing when there are no related findings", async () => {
+    const ctx = {
+      kb,
+      identity: makeIdentity(),
+      cwd: tmp,
+      loreVersion: "0.1.0",
+    };
+    const result = await handleLoreWrite(ctx, {
+      path: "completely-unrelated.md",
+      content: "# Unrelated\n",
+    });
+    const text = result.content[0].text;
+    expect(text).not.toContain("Related:");
+  });
+
+  it("does not append related findings when overwriting an existing page", async () => {
+    const ctx = {
+      kb,
+      identity: makeIdentity(),
+      cwd: tmp,
+      loreVersion: "0.1.0",
+    };
+    await handleLoreWrite(ctx, {
+      path: "tooling/agent-review.md",
+      content: "# Agent Review\n",
+    });
+    await handleLoreWrite(ctx, {
+      path: "tooling/weft.md",
+      content: "# Weft\n",
+    });
+    const result = await handleLoreWrite(ctx, {
+      path: "tooling/agent-review.md",
+      content: "# Agent Review Updated\n",
+    });
+    const text = result.content[0].text;
+    expect(text).not.toContain("Related:");
+  });
 });
 
 describe("handleLoreRead", () => {
@@ -219,5 +277,16 @@ describe("handleLoreSearch", () => {
     );
     expect(events[0].query).toBe("nothing-matches-this");
     expect(events[0].results).toBe(0);
+  });
+
+  it("suggests related pages on a zero-result search", async () => {
+    await handleLoreWrite(ctx, {
+      path: "weft/inputs.md",
+      content: "# Weft Inputs\n",
+    });
+    const result = await handleLoreSearch(ctx, { pattern: "weft inputs" });
+    const text = result.content[0].text;
+    expect(text).toContain("Nothing matched. Possibly related:");
+    expect(text).toContain("weft/inputs.md");
   });
 });
