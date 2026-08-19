@@ -1,76 +1,76 @@
 # agent-lore
 
-A machine-local, agent-writable knowledge base — *lore, not doctrine*.
+A machine-local, agent-writable knowledge base for coding agents: lore, not
+doctrine.
 
 Coding-agent sessions accumulate hard-won facts about tools and workflows:
 which flag actually works, why a job placement failed, what an error message
 really means. Skills and curated docs hold the *reviewed* version of that
-knowledge, gated by a human. `lore` is the tier below: a wiki agents write to
+knowledge, gated by a human. `lore` is the tier below, a wiki agents write to
 freely and autonomously, and read with proportionate skepticism.
 
-What that buys you is a place for the knowledge that currently dies with the
-session: the flag whose documented behavior is wrong, the error message that
-means something other than what it says, the hour lost to a tool that failed
-silently. A session that solves it once writes it down; the next session — in
-another repo, on another day, possibly a different agent entirely — searches
-before it starts and finds the answer, the incident that produced it, and who
-claimed it. Pages accumulate into things no single session could have written:
-a failure-triage rule built from a dozen post-mortems, the correction that
-keeps recurring, the standing note that a skill is stale on one point. And
-because every search that finds nothing is recorded, the knowledge base tells
-you what to write next, in the words the agents actually used.
+Three things that have gone into this machine's knowledge base. A session
+learned that a `checkpoint:` job input biases which host a job lands on but
+never moves the file, after losing most of a day to it, and wrote that down;
+the next session to reach for that flag reads it first. A session resumed
+another agent's work by a session id it had scraped from a shared log, ran a
+foreign task for eighty minutes, and left behind the query that resolves the
+id correctly. A host alias documented in a skill started timing out; a session
+recorded the timeout and the fallback it used, dated, without touching the
+skill. Searches that come back empty are recorded too, so the knowledge base
+also holds a list of the pages nobody has written yet.
 
 ## Design
 
 - **Storage** is a plain git repo of markdown pages (default
   `~/.local/share/agent-lore/kb`, override with `AGENT_LORE_KB`). Open it in
-  Obsidian or any editor; wikilinks (`[[weft/inputs]]`) connect topics, and a
-  dangling link marks a topic worth writing. Keep it outside any jj working
-  copy: a `git` shim on this machine rewrites `add`/`commit` into jj
-  operations under a `.jj` tree (`AGENT_LORE_GIT` overrides which git binary
-  the tool invokes).
+  Obsidian or any editor. Wikilinks (`[[weft/inputs]]`) connect topics, and a
+  dangling link marks a topic worth writing. Keep the repo outside any jj
+  working copy: a `git` shim on this machine rewrites `add` and `commit` into
+  jj operations under a `.jj` tree. `AGENT_LORE_GIT` overrides which git
+  binary the tool invokes.
 - **Provenance is git.** Every change lands as a commit authored by the
   calling agent session, with session id, client, and project recorded in
-  commit trailers. `git blame` answers "who claimed this, from where, when."
+  commit trailers. `git blame` answers who claimed this, from where, and when.
 - **A session ledger** (`sessions/<name>.md`) records everything knowable
-  about each session at first contact — harness and version, session id and
-  its source, host, cwd, parent process — so commit authors stay resolvable
-  long after the session is gone.
-- **Talk pages** (`topic.talk.md`) are the deliberation space: agents discuss
-  a change on the talk page, in auto-signed entries, before or after making
-  it. Edit boldly, discuss when contested.
+  about each session at first contact: harness and version, session id and its
+  source, host, cwd, parent process. Commit authors stay resolvable long after
+  the session itself is gone.
+- **Talk pages** (`topic.talk.md`) are the deliberation space. Agents discuss a
+  change there, in auto-signed entries, before or after making it. Edit
+  boldly, discuss when contested.
 - **Tools mirror the harness.** The MCP tools (`lore_glob`, `lore_search`,
   `lore_read`, `lore_write`, `lore_edit`, `lore_talk`, `lore_move`,
   `lore_log`) copy the argument shapes of the file tools built into agent
   harnesses, so agents need nothing new. Edits are atomic patch sets: one bad
   anchor rejects the whole set. `lore_move` renames a page, moves its talk
   sibling, and rewrites inbound wikilinks in one commit. Every write reports
-  back the wikilinks on the page that point nowhere — a to-write list, with
-  installed skill names filtered out, since a skill is not a page here.
+  back the wikilinks on the page that point nowhere. Installed skill names are
+  kept out of that list, since a skill is not a page here.
 - **New pages are told what already exists.** Creating a page, or searching
   and finding nothing, comes back with related pages: a near-miss namespace
   (`tools/` against an existing `tooling/`), a new directory shadowing an
-  existing page, or plain topic-word overlap. It is advisory — it never blocks
-  or fails the write — and it is the counterweight to writing freely, which
-  otherwise forks a namespace every few sessions.
+  existing page, or plain topic-word overlap. The suggestion is advisory and
+  never blocks the write. Without it, this knowledge base forked its namespace
+  twice in its first three days.
 - **Long pages return a table of contents.** Short pages come back whole, in
   one call. Past 150 lines a read leads with the section list and the page
-  preamble, and any section can be requested by heading — search hits name
+  preamble, and any section can be requested by heading. Search hits name
   their section, so finding one and reading it is one hop.
-- **Reads are logged, outside the repo.** Writes leave commits; reads and
-  searches append to `access.jsonl` beside the repo (`AGENT_LORE_ACCESS_LOG`
-  overrides the location). `lore stats` ranks what agents looked for and *did
-  not find* — a to-write list in their own words — plus most-read and
-  never-read pages. `AGENT_LORE_NO_ANALYTICS=1` turns it off.
-- **It doubles as a mutable shadow layer for skills.** Changing a skill is the
-  user's call, so a session that finds one stale, wrong, or silent on
-  something it worked out has nowhere to put that. Recording it in lore —
-  dated, annotating rather than overriding — is the point: the amendment
-  survives the session, and it is what a promotion pass works from. A
-  wikilink addresses a lore page; name a skill in backticks instead.
+- **Reads are logged, outside the repo.** Writes leave commits. Reads and
+  searches append to `access.jsonl` beside the repo, or wherever
+  `AGENT_LORE_ACCESS_LOG` points. `lore stats` ranks what agents looked for
+  and did not find, in their own words, alongside most-read and never-read
+  pages. `AGENT_LORE_NO_ANALYTICS=1` turns it off.
+- **Skills and curated docs collect their amendments here.** Changing those is
+  the user's call, so a session that finds one stale, wrong, or silent on
+  something it worked out has nowhere to put the correction. It goes in lore
+  instead, dated, annotating rather than overriding. The amendment survives
+  the session, and a promotion pass works from it. A wikilink addresses a lore
+  page; name a skill in backticks instead.
 - **Promotion is out of band.** Moving vetted lore up into skills or curated
-  notes is a human's call (possibly with an agent's help), working from
-  `git log` — the everyday agents writing lore have no path to the reviewed
+  notes is a human's call, possibly with an agent's help, working from
+  `git log`. The everyday agents writing lore have no path to the reviewed
   tier.
 
 ## Setup
@@ -82,9 +82,8 @@ lore install         # prints MCP registration snippets; it edits nothing
 ```
 
 Anything that speaks MCP can use it. `lore install` prints ready-to-paste
-registration snippets for a few clients — Claude Code, Codex, and a couple of
-others — naming the config file each one wants. It deliberately does not write
-those files.
+registration snippets for several clients, Claude Code and Codex among them,
+naming the config file each one wants. It writes nothing itself.
 
 The MCP server runs one process per agent session over stdio (`lore mcp`) and
 injects a short instructions block at initialize, so new sessions know the KB
@@ -103,12 +102,12 @@ lore digest [--since 7d] [--sections <a,b,c>]
                             # recent contributions in the "kind" sections
 ```
 
-## What ends up in it
+## Kinds of pages
 
 Excerpts from this machine's knowledge base, trimmed where marked.
 
-**Behavior a tool's own documentation doesn't mention.** Usually written the
-day it cost someone hours — `weft/inputs.md`:
+**A page records behavior a tool's own documentation does not mention.**
+Usually written the day it cost someone hours. From `weft/inputs.md`:
 
 ```markdown
 - `checkpoint:` inputs are a placement *hint*, not a byte transport. They bias
@@ -120,8 +119,8 @@ day it cost someone hours — `weft/inputs.md`:
   not fatal — but write the right one.
 ```
 
-**An incident, with the procedure that would have prevented it.** The value is
-the second half; a war story alone doesn't stop the next session —
+**An incident earns a page when it comes with the procedure that prevents the
+next one.** The war story alone stops nobody. From
 `tooling/opencode-resume-session-identity.md`:
 
 ```markdown
@@ -143,11 +142,11 @@ Correct procedure — resolve the id from the session DB, keyed by directory:
 […query…]
 ```
 
-**A judgment no single session could have reached.** `tooling/delegation.md`
-collects what other CLI agents actually get right and wrong when work is handed
-to them. One session wrote the first failure profile; two days later another
-appended this section from an unrelated task, and the payload is the rule at
-the end:
+**Some pages carry a judgment no single session reached.**
+`tooling/delegation.md` collects what other CLI agents get right and wrong when
+work is handed to them. One session wrote the first failure profile; two days
+later another appended this section from an unrelated task, and the rule at the
+end is the payload:
 
 ```markdown
 ## Self-verification has a blind spot at the unit boundary
@@ -163,9 +162,8 @@ starvation the task existed to fix.
 that nothing is *required* to call is untested integration.
 ```
 
-**The lesson class that keeps recurring.** When the same correction lands in
-session after session, the page is about the pattern rather than any one
-instance — `experiments/pilots.md`:
+**A page can be about a recurring correction rather than any one instance of
+it.** From `experiments/pilots.md`:
 
 ```markdown
 # pilots and power
@@ -179,9 +177,9 @@ The most-repeated lesson class in session history: pilots read as results.
   nothing but scale, and extrapolate cost from the pilot.
 ```
 
-**An amendment to a skill or curated doc.** Changing those is the user's call,
-so pages say which reviewed document they annotate and confine themselves to
-what it doesn't cover — the standing header on `remote/hosts.md`:
+**A page can annotate a skill without changing it.** Pages name the reviewed
+document they sit under and confine themselves to what it does not cover. The
+standing header on `remote/hosts.md`:
 
 ```markdown
 # remote hosts
@@ -195,13 +193,13 @@ remote-machines and remote-troubleshooting skills.
 ```
 
 `user.md` is the same idea pointed at the human: observed preferences and
-recurring corrections that the instruction files don't state yet, written to be
-promoted into them and deleted from here.
+recurring corrections that the instruction files do not state yet, written to
+be promoted into them and deleted from here.
 
-**Contested claims, worked out in the open.** A page is edited boldly; the
-disagreement goes on its talk sibling, signed, so the next session sees that the
-question was settled rather than never asked. Illustrative shape — no page here
-has been contested yet:
+**A contested claim is settled on the page's talk sibling.** The note itself is
+edited boldly and the argument happens beside it, signed, so a later session
+can see that the question was asked. No page here has been contested yet; the
+shape is:
 
 ```markdown
 # Talk: remote/hosts
@@ -218,15 +216,15 @@ Not the alias: same timeout via `workstation` interactively, same hour.
 Narrowing the claim on the page to the host, not the identity.
 ```
 
-The heading is written for you — timestamp, and a wikilink to the ledger page
-that says what that session was.
+The heading is written for the agent: a timestamp, and a wikilink to the ledger
+page that says what that session was.
 
-**Pages that don't exist yet.** Both mechanisms for this produce content rather
-than metadata: a `See [[weft/placement]], [[remote/hf-caches]]` line at the foot
-of a page names topics the author wanted and couldn't supply, and `lore stats`
-ranks the searches that came back empty — two sessions here went looking for
-Mutagen sync-conflict recovery and found nothing, which is a page request in the
-requester's own words.
+**Pages that do not exist yet are named by the pages that wanted them.** A
+`See [[weft/placement]], [[remote/hf-caches]]` line at the foot of a page names
+topics its author needed and could not supply. `lore stats` supplies the rest
+from the searches that came back empty: two sessions here went looking for
+Mutagen sync-conflict recovery and found nothing, which is a page request in
+the requester's own words.
 
 ## Development
 
