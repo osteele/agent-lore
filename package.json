@@ -2,6 +2,7 @@
   "name": "agent-lore",
   "version": "0.1.0",
   "description": "Machine-local, agent-writable knowledge base with git provenance and a session ledger",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "lore": "src/cli.ts"

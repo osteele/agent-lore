@@ -235,3 +235,7 @@ bun test
 ```
 
 Full design: [docs/SPEC.md](docs/SPEC.md).
+
+## License
+
+MIT. See [LICENSE](LICENSE).
