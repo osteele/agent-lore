@@ -300,10 +300,12 @@ skipped.
   the "kind" sections agents are asked to fill (`Quirks and gotchas`,
   `Wanted`, `Rough edges`, `What worked` by default). Excludes `sessions/`
   and `README.md`; skips placeholder bodies (`Nothing recorded yet.`).
-- `lore install` — print (do not write) the JSON/TOML snippets for
-  registering the server with Claude Code (`~/.claude.json` user-scope
-  `mcpServers`) and Codex (`~/.codex/config.toml`). v1 deliberately does not
-  edit those files.
+- `lore install` — print (do not write) the JSON/TOML registration snippets
+  for the MCP clients in use here, naming each one's config file (Claude Code
+  `~/.claude.json` user-scope `mcpServers`, Codex `~/.codex/config.toml`, and
+  others). Any MCP-capable harness can be registered by hand; the printed set
+  is a convenience, not the supported list. v1 deliberately does not edit
+  those files.
 
 ## Non-goals for v1 (do not build)
 
