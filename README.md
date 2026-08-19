@@ -42,11 +42,11 @@ proportionate skepticism.
   overrides the location). `lore stats` ranks what agents looked for and *did
   not find* — a to-write list in their own words — plus most-read and
   never-read pages. `AGENT_LORE_NO_ANALYTICS=1` turns it off.
-- **It doubles as a mutable shadow layer for skills.** Agents cannot edit a
-  skill, so a skill that is stale, wrong, or silent on something they worked
-  out has nowhere to go. Recording that in lore — dated, annotating rather
-  than overriding — is the point: the amendment survives the session, and it
-  is what a promotion pass has to work from.
+- **It doubles as a mutable shadow layer for skills.** Changing a skill is the
+  user's call, so a session that finds one stale, wrong, or silent on
+  something it worked out has nowhere to put that. Recording it in lore —
+  dated, annotating rather than overriding — is the point: the amendment
+  survives the session, and it is what a promotion pass works from.
 - **Promotion is out of band.** Moving vetted lore up into skills or curated
   notes is a human's call (possibly with an agent's help), working from
   `git log` — the everyday agents writing lore have no path to the reviewed
