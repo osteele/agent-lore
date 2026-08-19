@@ -36,7 +36,8 @@ export async function listSkillNames(
 function resolveSkillDirs(): string[] {
   const envDirs = process.env.AGENT_LORE_SKILL_DIRS;
   if (envDirs) {
-    return envDirs.split(":").filter((d) => d !== "");
+    // path.delimiter, not ":" — a Windows drive letter carries a colon.
+    return envDirs.split(path.delimiter).filter((d) => d !== "");
   }
   return DEFAULT_SKILL_DIRS;
 }

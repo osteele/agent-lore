@@ -31,7 +31,11 @@ export function normalizeRepoPath(input: string): string {
     throw new PathEscapeError(input, "absolute path");
   }
 
-  const parts = input.split(/[\/]+/);
+  // Backslash counts as a separator on every platform, not just Windows:
+  // Bun.Glob yields native separators, and a caller-supplied `sessions\\x.md`
+  // must normalize to `sessions/x.md` or it slips past the server-owned
+  // directory refusal, which matches on `sessions/`.
+  const parts = input.split(/[\/\\]+/);
   const stack: string[] = [];
   for (const part of parts) {
     if (part === "" || part === ".") continue;

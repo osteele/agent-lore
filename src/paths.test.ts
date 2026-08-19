@@ -42,6 +42,13 @@ describe("normalizeRepoPath", () => {
     expect(() => normalizeRepoPath("")).toThrow(PathEscapeError);
     expect(() => normalizeRepoPath(".")).toThrow(PathEscapeError);
   });
+
+  it("treats a backslash as a separator, so a Windows spelling of sessions/ is still refused", () => {
+    expect(normalizeRepoPath("sessions\\x.md")).toBe("sessions/x.md");
+    expect(isSessionsPath(normalizeRepoPath("sessions\\x.md"))).toBe(true);
+    expect(normalizeRepoPath("foo\\bar\\baz.md")).toBe("foo/bar/baz.md");
+    expect(() => normalizeRepoPath("..\\outside.md")).toThrow(PathEscapeError);
+  });
 });
 
 describe("isSessionsPath", () => {
